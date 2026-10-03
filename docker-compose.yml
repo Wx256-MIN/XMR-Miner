@@ -3,9 +3,10 @@ services:
     build:
       context: .
       args:
-        XMRIG_VERSION: "6.25.0"
+        XMRIG_VERSION: "6.26.0"
     container_name: xmr-miner
     restart: unless-stopped
+    init: true
     environment:
       XMR_POOL: "${XMR_POOL}"
       XMR_WALLET: "${XMR_WALLET}"
@@ -16,12 +17,13 @@ services:
       - xmr-data:/data
     ports:
       - "8080:8080"
+    stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/2/summary"]
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 45s
 
 volumes:
   xmr-data:
