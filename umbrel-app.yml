@@ -3,11 +3,11 @@ id: xmr-miner
 name: XMR Miner
 tagline: Monero CPU mining with XMRig
 category: finance
-version: "0.1.0"
+version: "0.2.0"
 port: 8080
 description: >-
-  CPU-based Monero mining with XMRig. Configure a Monero pool,
-  wallet address, worker name and CPU thread count.
+  Monero CPU miner for UmbrelOS powered by XMRig 6.26.0.
+  Configure a Monero pool, wallet address, worker name and CPU thread count.
 developer: Wx256-MIN
 website: https://github.com/Wx256-MIN/XMR-Miner
 submitter: Wx256-MIN
@@ -15,6 +15,8 @@ submission: https://github.com/Wx256-MIN/XMR-Miner
 repo: https://github.com/Wx256-MIN/XMR-Miner
 support: https://github.com/Wx256-MIN/XMR-Miner/issues
 gallery: []
-releaseNotes: Initial XMRig-based CPU miner.
+releaseNotes: >-
+  Updated to XMRig 6.26.0 with source builds, configuration validation,
+  health checks and graceful container shutdown.
 dependencies: []
 path: .
