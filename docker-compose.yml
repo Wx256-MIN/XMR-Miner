@@ -1,11 +1,17 @@
+version: "3.7"
 services:
+  app_proxy:
+    environment:
+      APP_HOST: xmr-miner_xmr-miner_1
+      APP_PORT: 80
+      PROXY_AUTH_WHITELIST: "/2/*"
+
   xmr-miner:
     build:
       context: .
       args:
         XMRIG_VERSION: "6.26.0"
-    container_name: xmr-miner
-    restart: unless-stopped
+    restart: on-failure
     init: true
     environment:
       XMR_POOL: "${XMR_POOL}"
@@ -14,7 +20,9 @@ services:
       XMR_THREADS: "${XMR_THREADS:-0}"
       XMR_DONATE_LEVEL: "${XMR_DONATE_LEVEL:-1}"
     volumes:
-      - xmr-data:/data
+      - ${APP_DATA_DIR}/data:/data
+    expose:
+      - "80"
     ports:
       - "8080:8080"
     stop_grace_period: 30s
@@ -24,6 +32,3 @@ services:
       timeout: 5s
       retries: 5
       start_period: 45s
-
-volumes:
-  xmr-data:
