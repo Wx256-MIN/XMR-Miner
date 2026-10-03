@@ -7,10 +7,7 @@ services:
       PROXY_AUTH_WHITELIST: "/2/*"
 
   xmr-miner:
-    build:
-      context: .
-      args:
-        XMRIG_VERSION: "6.26.0"
+    image: ghcr.io/wx256-min/xmr-miner:0.3.2
     restart: on-failure
     init: true
     volumes:
