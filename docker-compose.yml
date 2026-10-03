@@ -1,0 +1,27 @@
+services:
+  xmr-miner:
+    build:
+      context: .
+      args:
+        XMRIG_VERSION: "6.25.0"
+    container_name: xmr-miner
+    restart: unless-stopped
+    environment:
+      XMR_POOL: "${XMR_POOL}"
+      XMR_WALLET: "${XMR_WALLET}"
+      XMR_WORKER: "${XMR_WORKER:-umbrel}"
+      XMR_THREADS: "${XMR_THREADS:-0}"
+      XMR_DONATE_LEVEL: "${XMR_DONATE_LEVEL:-1}"
+    volumes:
+      - xmr-data:/data
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/2/summary"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  xmr-data:
