@@ -2,7 +2,7 @@
 
 ARG XMRIG_VERSION=6.26.0
 
-FROM ubuntu:24.04 AS arm64-builder
+FROM ubuntu:24.04 AS builder
 ARG XMRIG_VERSION
 
 RUN apt-get update \
@@ -25,7 +25,6 @@ RUN git clone --depth 1 --branch "v${XMRIG_VERSION}" https://github.com/xmrig/xm
     && test -x xmrig/build/xmrig
 
 FROM ubuntu:24.04 AS runtime
-ARG XMRIG_VERSION
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -33,8 +32,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --create-home --home-dir /data xmrig
 
-COPY --from=arm64-builder /src/xmrig/build/xmrig /opt/xmrig-arm64
-
+COPY --from=builder /src/xmrig/build/xmrig /opt/xmrig
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod 0755 /entrypoint.sh \
     && mkdir -p /data \
