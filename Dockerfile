@@ -28,7 +28,7 @@ FROM ubuntu:24.04 AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       ca-certificates curl libuv1t64 libhwloc15 libmicrohttpd12 libssl3t64 \
+       ca-certificates curl libuv1t64 libhwloc15 libmicrohttpd12 libssl3t64 libstdc++6 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --create-home --home-dir /data xmrig
 
