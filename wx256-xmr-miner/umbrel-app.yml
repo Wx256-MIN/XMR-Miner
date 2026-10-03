@@ -2,11 +2,12 @@ manifestVersion: 1
 id: wx256-xmr-miner
 name: XMR Miner
 tagline: Monero CPU mining with XMRig
+icon: https://raw.githubusercontent.com/Wx256-MIN/XMR-Miner/main/wx256-xmr-miner/dashboard/favicon.svg
 category: finance
-version: "0.3.0"
+version: "0.3.1"
 port: 80
 description: >-
-  Monero CPU miner for UmbrelOS with a built-in web dashboard,
+  Monero CPU miner for UmbrelOS with a built-in setup wizard,
   live hashrate, share statistics and pool status.
 developer: Wx256-MIN
 website: https://github.com/Wx256-MIN/XMR-Miner
@@ -16,7 +17,7 @@ repo: https://github.com/Wx256-MIN/XMR-Miner
 support: https://github.com/Wx256-MIN/XMR-Miner/issues
 gallery: []
 releaseNotes: >-
-  Added Umbrel dashboard access with live XMRig statistics and
-  packaged the app for the Wx256 Community App Store.
+  Fixed Umbrel installation by removing required install-time pool variables,
+  added an in-app miner setup wizard, and added app icon and favicon support.
 dependencies: []
 path: .
