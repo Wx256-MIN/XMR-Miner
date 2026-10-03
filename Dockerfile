@@ -1,25 +1,44 @@
-FROM ubuntu:24.04
+# syntax=docker/dockerfile:1.7
 
-ARG XMRIG_VERSION=6.25.0
+ARG XMRIG_VERSION=6.26.0
+
+FROM ubuntu:24.04 AS arm64-builder
+ARG XMRIG_VERSION
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl libuv1t64 libhwloc15 libmicrohttpd12 \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates git build-essential cmake \
+       libuv1-dev libssl-dev libhwloc-dev libmicrohttpd-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN arch="$(dpkg --print-architecture)" \
-    && case "$arch" in \
-         amd64) asset="xmrig-${XMRIG_VERSION}-linux-static-x64.tar.gz" ;; \
-         arm64) asset="xmrig-${XMRIG_VERSION}-linux-static-arm64.tar.gz" ;; \
-         *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
-       esac \
-    && curl -fsSL "https://github.com/xmrig/xmrig/releases/download/v${XMRIG_VERSION}/${asset}" -o /tmp/xmrig.tar.gz \
-    && mkdir -p /opt/xmrig \
-    && tar -xzf /tmp/xmrig.tar.gz --strip-components=1 -C /opt/xmrig \
-    && test -x /opt/xmrig/xmrig \
-    && rm -f /tmp/xmrig.tar.gz
+WORKDIR /src
+
+RUN git clone --depth 1 --branch "v${XMRIG_VERSION}" https://github.com/xmrig/xmrig.git xmrig \
+    && cmake -S xmrig -B xmrig/build \
+       -DCMAKE_BUILD_TYPE=Release \
+       -DWITH_HWLOC=ON \
+       -DWITH_HTTPD=ON \
+       -DWITH_TLS=ON \
+       -DWITH_OPENCL=OFF \
+       -DWITH_CUDA=OFF \
+    && cmake --build xmrig/build --config Release --parallel "$(nproc)" \
+    && test -x xmrig/build/xmrig
+
+FROM ubuntu:24.04 AS runtime
+ARG XMRIG_VERSION
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates curl libuv1t64 libhwloc15 libmicrohttpd12 libssl3t64 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home --home-dir /data xmrig
+
+COPY --from=arm64-builder /src/xmrig/build/xmrig /opt/xmrig-arm64
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod 0755 /entrypoint.sh
+RUN chmod 0755 /entrypoint.sh \
+    && mkdir -p /data \
+    && chown -R 10001:10001 /data
 
 WORKDIR /data
 EXPOSE 8080
