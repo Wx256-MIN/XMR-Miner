@@ -11,6 +11,7 @@ API = "http://127.0.0.1:8080"
 NETWORK_API = "https://api.xmrig.com/1/network/XMR"
 NETWORKS_API = "https://api.xmrig.com/1/networks"
 NETWORK_CACHE_SECONDS = 10
+NETWORK_REFRESH_SECONDS = 10
 ROOT = "/dashboard"
 CONFIG = "/data/config.json"
 MINER = "/opt/xmrig"
@@ -85,7 +86,7 @@ def start_miner():
 
 
 def fetch_json(url, timeout=5):
-    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.3.4"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.3.6", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
@@ -97,31 +98,70 @@ def get_summary():
         return {}
 
 
-def get_network():
+def fetch_network():
+    try:
+        data = fetch_json(NETWORK_API, timeout=5)
+        if isinstance(data, dict) and isinstance(data.get("difficulty"), (int, float)):
+            return data
+    except Exception:
+        pass
+
+    try:
+        data = fetch_json(NETWORKS_API, timeout=5)
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and str(item.get("coin", "")).upper() == "XMR":
+                    if isinstance(item.get("difficulty"), (int, float)):
+                        return item
+    except Exception:
+        pass
+
+    return None
+
+
+def refresh_network(force=False):
     global network_cache
     now = time.time()
+
     with network_lock:
-        if now - network_cache["ts"] < NETWORK_CACHE_SECONDS and network_cache["data"]:
+        if (
+            not force
+            and network_cache["data"]
+            and now - network_cache["ts"] < NETWORK_CACHE_SECONDS
+        ):
             return network_cache["data"]
 
-        try:
-            data = fetch_json(NETWORK_API, timeout=4)
-            if not isinstance(data, dict) or not isinstance(data.get("difficulty"), (int, float)):
-                raise ValueError("Invalid network difficulty response")
-            network_cache = {"ts": now, "data": data}
+    data = fetch_network()
+    if data is not None:
+        with network_lock:
+            network_cache = {"ts": time.time(), "data": data}
             return data
-        except Exception:
-            try:
-                networks = fetch_json(NETWORKS_API, timeout=4)
-                if isinstance(networks, list):
-                    data = next((item for item in networks if item.get("coin") == "XMR"), {})
-                    if isinstance(data.get("difficulty"), (int, float)):
-                        network_cache = {"ts": now, "data": data}
-                        return data
-            except Exception:
-                pass
-            return network_cache["data"]
 
+    with network_lock:
+        return network_cache["data"]
+
+
+def network_refresh_loop():
+    while True:
+        try:
+            refresh_network(force=True)
+        except Exception:
+            pass
+        time.sleep(NETWORK_REFRESH_SECONDS)
+
+
+def get_network():
+    with network_lock:
+        cached = network_cache["data"]
+        age = time.time() - network_cache["ts"]
+
+    if cached and age < NETWORK_CACHE_SECONDS:
+        return cached
+
+    if not cached:
+        return refresh_network(force=True)
+
+    return cached
 
 def get_stats():
     summary = get_summary()
@@ -158,6 +198,9 @@ def get_stats():
     network_diff = network.get("difficulty")
     network_height = network.get("height")
 
+    with network_lock:
+        network_updated_at = network_cache.get("ts") or None
+
     block_candidate = (
         isinstance(best_diff, (int, float))
         and isinstance(network_diff, (int, float))
@@ -178,7 +221,7 @@ def get_stats():
         "best_diff": best_diff,
         "network_difficulty": network_diff,
         "network_height": network_height,
-        "network_updated_at": network_cache.get("ts") or None,
+        "network_updated_at": network_updated_at,
         "network_live": bool(network.get("difficulty")),
         "block_candidate": block_candidate,
     }
@@ -297,4 +340,5 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+threading.Thread(target=network_refresh_loop, daemon=True).start()
 ThreadingHTTPServer(("0.0.0.0", 80), Handler).serve_forever()
