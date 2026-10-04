@@ -15,6 +15,9 @@ NETWORK_REFRESH_SECONDS = 10
 ROOT = "/dashboard"
 CONFIG = "/data/config.json"
 MINER = "/opt/xmrig"
+GRPCURL = "/usr/local/bin/grpcurl"
+TARI_PROTO = "/opt/tari-proto"
+TARI_NODE_GRPC = os.environ.get("TARI_NODE_GRPC", "host.docker.internal:18142")
 
 COINS = {
     "xmr": {
@@ -133,10 +136,43 @@ def get_summary():
         return {}
 
 
+def fetch_tari_network(cfg):
+    address = str(cfg.get("tari_node_grpc") or TARI_NODE_GRPC).strip()
+    if not address:
+        return None
+    try:
+        cmd = [
+            GRPCURL, "-plaintext",
+            "-import-path", TARI_PROTO,
+            "-proto", "base_node.proto",
+            "-d", '{"from_tip": 10}',
+            address,
+            "tari.rpc.BaseNode/GetNetworkDifficulty",
+        ]
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=8, text=True)
+        latest = None
+        for line in out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if int(item.get("powAlgo", item.get("pow_algo", -1))) != 2:
+                continue
+            if isinstance(item.get("difficulty"), (int, float)):
+                if latest is None or int(item.get("height", 0)) >= int(latest.get("height", 0)):
+                    latest = item
+        return latest
+    except Exception:
+        return None
+
+
 def fetch_network():
     cfg = load_config()
-    if get_coin_config(cfg) != "xmr":
-        return None
+    if get_coin_config(cfg) == "tari":
+        return fetch_tari_network(cfg)
 
     try:
         data = fetch_json(NETWORK_API, timeout=5)
@@ -208,7 +244,7 @@ def get_stats():
     coin = get_coin_config(cfg)
     coin_cfg = COINS[coin]
     summary = get_summary()
-    network = get_network() if coin == "xmr" else {}
+    network = get_network()
 
     results = summary.get("results") or {}
     connection = summary.get("connection") or {}
@@ -269,8 +305,9 @@ def get_stats():
         "network_difficulty": network_diff,
         "network_algorithm": network_algo,
         "network_height": network_height,
-        "network_updated_at": network_updated_at if coin == "xmr" else None,
-        "network_live": bool(network.get("difficulty")) if coin == "xmr" else False,
+        "network_updated_at": network_updated_at if network else None,
+        "network_live": bool(network.get("difficulty")),
+        "network_source": "tari-base-node" if coin == "tari" else "xmrig-network-api",
         "block_candidate": block_candidate,
     }
 
@@ -384,6 +421,7 @@ class Handler(BaseHTTPRequestHandler):
                     "worker": worker,
                     "threads": threads,
                     "donate_level": donate,
+                    "tari_node_grpc": str(body.get("tari_node_grpc", cfg.get("tari_node_grpc", TARI_NODE_GRPC))).strip() if coin == "tari" else cfg.get("tari_node_grpc", TARI_NODE_GRPC),
                 }
             )
 
