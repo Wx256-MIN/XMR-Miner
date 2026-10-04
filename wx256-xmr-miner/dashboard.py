@@ -137,37 +137,25 @@ def get_summary():
 
 
 def fetch_tari_network(cfg):
-    address = str(cfg.get("tari_node_grpc") or TARI_NODE_GRPC).strip()
-    if not address:
-        return None
-    try:
-        cmd = [
-            GRPCURL, "-plaintext",
-            "-import-path", TARI_PROTO,
-            "-proto", "base_node.proto",
-            "-d", '{"from_tip": 10}',
-            address,
-            "tari.rpc.BaseNode/GetNetworkDifficulty",
-        ]
-        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=8, text=True)
-        latest = None
-        for line in out.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                item = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if int(item.get("powAlgo", item.get("pow_algo", -1))) != 2:
-                continue
-            if isinstance(item.get("difficulty"), (int, float)):
-                if latest is None or int(item.get("height", 0)) >= int(latest.get("height", 0)):
-                    latest = item
-        return latest
-    except Exception:
-        return None
-
+    # Kryptex publishes XTM-RX network hashrate and difficulty through its
+    # public API. This avoids requiring a Tari Base Node on the Umbrel host.
+    for coin_id in ("xtm-rx", "xtm"):
+        try:
+            data = fetch_json("https://pool.kryptex.com/api/v1/net/stats/" + coin_id, timeout=5)
+            if isinstance(data, dict):
+                payload = data.get("data") if isinstance(data.get("data"), dict) else data
+                difficulty = payload.get("difficulty") or payload.get("network_difficulty")
+                height = payload.get("height") or payload.get("network_height")
+                if isinstance(difficulty, (int, float)):
+                    return {
+                        "difficulty": difficulty,
+                        "height": height,
+                        "algo": "rx/0",
+                        "source": "kryptex",
+                    }
+        except Exception:
+            pass
+    return None
 
 def fetch_network():
     cfg = load_config()
@@ -307,7 +295,7 @@ def get_stats():
         "network_height": network_height,
         "network_updated_at": network_updated_at if network else None,
         "network_live": bool(network.get("difficulty")),
-        "network_source": "tari-base-node" if coin == "tari" else "xmrig-network-api",
+        "network_source": "kryptex-api" if coin == "tari" else "xmrig-network-api",
         "block_candidate": block_candidate,
     }
 
@@ -421,8 +409,7 @@ class Handler(BaseHTTPRequestHandler):
                     "worker": worker,
                     "threads": threads,
                     "donate_level": donate,
-                    "tari_node_grpc": str(body.get("tari_node_grpc", cfg.get("tari_node_grpc", TARI_NODE_GRPC))).strip() if coin == "tari" else cfg.get("tari_node_grpc", TARI_NODE_GRPC),
-                }
+                                    }
             )
 
             ok, msg = start_miner()
