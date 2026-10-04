@@ -15,7 +15,29 @@ NETWORK_REFRESH_SECONDS = 10
 ROOT = "/dashboard"
 CONFIG = "/data/config.json"
 MINER = "/opt/xmrig"
-ALGORITHM = "rx/0"  # Monero RandomX
+
+COINS = {
+    "xmr": {
+        "name": "Monero",
+        "symbol": "XMR",
+        "algorithm": "rx/0",
+        "algorithm_name": "RandomX",
+        "coin_arg": "monero",
+        "wallet_label": "Monero wallet address",
+        "wallet_placeholder": "4... or 8...",
+    },
+    "tari": {
+        "name": "Tari",
+        "symbol": "XTM",
+        "algorithm": "rx/0",
+        "algorithm_name": "RandomX (RandomXT)",
+        "coin_arg": None,
+        "wallet_label": "Tari wallet address",
+        "wallet_placeholder": "Tari XTM address",
+    },
+}
+
+DEFAULT_COIN = "xmr"
 
 miner_lock = threading.Lock()
 miner_process = None
@@ -38,6 +60,12 @@ def save_config(cfg):
         json.dump(cfg, f, indent=2)
     os.chmod(tmp, 0o600)
     os.replace(tmp, CONFIG)
+
+
+def get_coin_config(cfg=None):
+    cfg = cfg or load_config()
+    coin = str(cfg.get("coin", DEFAULT_COIN)).lower()
+    return coin if coin in COINS else DEFAULT_COIN
 
 
 def miner_running():
@@ -63,13 +91,14 @@ def start_miner():
     if not cfg.get("pool") or not cfg.get("wallet"):
         return False, "Pool URL and wallet address are required"
 
+    coin = get_coin_config(cfg)
+    coin_cfg = COINS[coin]
     stop_miner()
 
     args = [
         MINER,
         "--url=" + cfg["pool"],
-        "--algo=" + ALGORITHM,
-        "--coin=monero",
+        "--algo=" + coin_cfg["algorithm"],
         "--user=" + cfg["wallet"],
         "--pass=" + cfg.get("worker", "umbrel"),
         "--donate-level=" + str(cfg.get("donate_level", 1)),
@@ -77,6 +106,9 @@ def start_miner():
         "--http-port=8080",
         "--print-time=60",
     ]
+
+    if coin_cfg["coin_arg"]:
+        args.insert(3, "--coin=" + coin_cfg["coin_arg"])
 
     threads = int(cfg.get("threads", 0))
     if threads > 0:
@@ -89,7 +121,7 @@ def start_miner():
 
 
 def fetch_json(url, timeout=5):
-    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.3.6", "Accept": "application/json"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.3.8", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
@@ -102,6 +134,10 @@ def get_summary():
 
 
 def fetch_network():
+    cfg = load_config()
+    if get_coin_config(cfg) != "xmr":
+        return None
+
     try:
         data = fetch_json(NETWORK_API, timeout=5)
         if isinstance(data, dict) and isinstance(data.get("difficulty"), (int, float)):
@@ -166,9 +202,13 @@ def get_network():
 
     return cached
 
+
 def get_stats():
+    cfg = load_config()
+    coin = get_coin_config(cfg)
+    coin_cfg = COINS[coin]
     summary = get_summary()
-    network = get_network()
+    network = get_network() if coin == "xmr" else {}
 
     results = summary.get("results") or {}
     connection = summary.get("connection") or {}
@@ -200,20 +240,24 @@ def get_stats():
 
     network_diff = network.get("difficulty")
     network_height = network.get("height")
+    network_algo = network.get("algo") or coin_cfg["algorithm"]
 
     with network_lock:
         network_updated_at = network_cache.get("ts") or None
 
     block_candidate = (
-        isinstance(best_diff, (int, float))
+        coin == "xmr"
+        and isinstance(best_diff, (int, float))
         and isinstance(network_diff, (int, float))
         and network_diff > 0
         and best_diff >= network_diff
     )
 
-    cfg = load_config()
     return {
         "running": miner_running(),
+        "coin": coin,
+        "coin_name": coin_cfg["name"],
+        "symbol": coin_cfg["symbol"],
         "hashrate": hash_value,
         "accepted": accepted,
         "rejected": rejected,
@@ -223,10 +267,10 @@ def get_stats():
         "pool_diff": pool_diff,
         "best_diff": best_diff,
         "network_difficulty": network_diff,
-        "network_algorithm": network.get("algo") or ALGORITHM,
+        "network_algorithm": network_algo,
         "network_height": network_height,
-        "network_updated_at": network_updated_at,
-        "network_live": bool(network.get("difficulty")),
+        "network_updated_at": network_updated_at if coin == "xmr" else None,
+        "network_live": bool(network.get("difficulty")) if coin == "xmr" else False,
         "block_candidate": block_candidate,
     }
 
@@ -262,11 +306,15 @@ class Handler(BaseHTTPRequestHandler):
             public = cfg.copy()
             if public.get("wallet"):
                 public["wallet"] = public["wallet"][:8] + "…" + public["wallet"][-6:]
+            coin = get_coin_config(cfg)
+            public["coin"] = coin
             self.json_response(
                 200,
                 {
                     "configured": bool(cfg.get("pool") and cfg.get("wallet")),
                     "config": public,
+                    "coin": COINS[coin],
+                    "coins": COINS,
                     "running": miner_running(),
                 },
             )
@@ -310,6 +358,9 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length))
 
+            coin = str(body.get("coin", DEFAULT_COIN)).strip().lower()
+            if coin not in COINS:
+                raise ValueError("Unsupported coin")
             pool = str(body.get("pool", "")).strip()
             wallet = str(body.get("wallet", "")).strip()
             worker = str(body.get("worker", "umbrel")).strip() or "umbrel"
@@ -327,6 +378,7 @@ class Handler(BaseHTTPRequestHandler):
 
             save_config(
                 {
+                    "coin": coin,
                     "pool": pool,
                     "wallet": wallet,
                     "worker": worker,
