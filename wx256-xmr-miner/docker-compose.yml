@@ -7,7 +7,9 @@ services:
       PROXY_AUTH_WHITELIST: "/api/*"
 
   xmr-miner:
-    image: ghcr.io/wx256-min/xmr-miner:0.3.8
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    image: ghcr.io/wx256-min/xmr-miner:0.3.9
     restart: on-failure
     init: true
     volumes:
