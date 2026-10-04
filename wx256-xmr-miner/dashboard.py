@@ -181,15 +181,11 @@ def find_number(value, keys):
 
 def parse_kryptex_difficulty_page(html):
     # Kryptex's public XTM coin page currently renders a human-readable
-    # network difficulty such as "40.08 GH". This is a fallback only when
-    # the documented JSON API is unavailable or changes response shape.
+    # network difficulty such as "40.08 GH". Use simple text parsing so
+    # this fallback stays dependency-free and resilient to markup changes.
     import re
 
-    patterns = [
-        r"mining difficulty of\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(KH|MH|GH|TH|PH|H)\\b",
-        r"difficulty[^0-9]{0,80}([0-9]+(?:\\.[0-9]+)?)\\s*(KH|MH|GH|TH|PH|H)\\b",
-    ]
-    multipliers = {
+    units = {
         "H": 1,
         "KH": 1_000,
         "MH": 1_000_000,
@@ -197,13 +193,18 @@ def parse_kryptex_difficulty_page(html):
         "TH": 1_000_000_000_000,
         "PH": 1_000_000_000_000_000,
     }
-    for pattern in patterns:
-        match = re.search(pattern, html, flags=re.IGNORECASE)
-        if match:
-            value = float(match.group(1)) * multipliers[match.group(2).upper()]
-            if value > 0:
-                return value
-    return None
+
+    text = re.sub(r"<[^>]+>", " ", html)
+    match = re.search(
+        r"mining difficulty of\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(KH|MH|GH|TH|PH|H)\\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    value = float(match.group(1)) * units[match.group(2).upper()]
+    return value if value > 0 else None
 
 
 def fetch_tari_network(cfg):
