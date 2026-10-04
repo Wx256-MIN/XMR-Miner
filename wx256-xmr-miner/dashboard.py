@@ -15,6 +15,7 @@ NETWORK_REFRESH_SECONDS = 10
 ROOT = "/dashboard"
 CONFIG = "/data/config.json"
 MINER = "/opt/xmrig"
+ALGORITHM = "rx/0"  # Monero RandomX
 
 miner_lock = threading.Lock()
 miner_process = None
@@ -67,6 +68,8 @@ def start_miner():
     args = [
         MINER,
         "--url=" + cfg["pool"],
+        "--algo=" + ALGORITHM,
+        "--coin=monero",
         "--user=" + cfg["wallet"],
         "--pass=" + cfg.get("worker", "umbrel"),
         "--donate-level=" + str(cfg.get("donate_level", 1)),
@@ -220,6 +223,7 @@ def get_stats():
         "pool_diff": pool_diff,
         "best_diff": best_diff,
         "network_difficulty": network_diff,
+        "network_algorithm": network.get("algo") or ALGORITHM,
         "network_height": network_height,
         "network_updated_at": network_updated_at,
         "network_live": bool(network.get("difficulty")),
