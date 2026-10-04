@@ -181,8 +181,7 @@ def find_number(value, keys):
 
 def parse_kryptex_difficulty_page(html):
     # Kryptex's public XTM coin page currently renders a human-readable
-    # network difficulty such as "40.08 GH". Use simple text parsing so
-    # this fallback stays dependency-free and resilient to markup changes.
+    # network difficulty such as "40.08 GH". Keep this fallback dependency-free.
     import re
 
     units = {
@@ -194,17 +193,27 @@ def parse_kryptex_difficulty_page(html):
         "PH": 1_000_000_000_000_000,
     }
 
-    text = re.sub(r"<[^>]+>", " ", html)
-    match = re.search(
-        r"mining difficulty of\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(KH|MH|GH|TH|PH|H)\\b",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if not match:
+    text = re.sub("<[^>]+>", " ", html)
+    marker = "mining difficulty of"
+    lower = text.lower()
+    pos = lower.find(marker)
+    if pos < 0:
         return None
 
-    value = float(match.group(1)) * units[match.group(2).upper()]
-    return value if value > 0 else None
+    tail = text[pos + len(marker):pos + len(marker) + 100]
+    parts = tail.replace(",", " ").split()
+    for index, part in enumerate(parts):
+        try:
+            value = float(part)
+        except ValueError:
+            continue
+        if index + 1 >= len(parts):
+            continue
+        unit = parts[index + 1].upper().strip(".,:;)")
+        if unit in units:
+            return value * units[unit]
+
+    return None
 
 
 def fetch_tari_network(cfg):
