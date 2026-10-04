@@ -57,7 +57,7 @@ main{max-width:1050px;margin:auto;padding:28px}
 const $=id=>document.getElementById(id);
 let currentTab="overview";
 function fmtHash(n){if(!Number.isFinite(n))return"—";const u=["H/s","kH/s","MH/s","GH/s"];let i=0;while(n>=1000&&i<u.length-1){n/=1000;i++}return n.toFixed(n>=100?0:n>=10?1:2)+" "+u[i]}
-function fmtDiff(n){if(!Number.isFinite(n))return"—";const u=["","K","M","B","T","P"];let i=0;let v=n;while(Math.abs(v)>=1000&&i<u.length-1){v/=1000;i++}return v.toFixed(v>=100?0:v>=10?1:2)+" "+u[i]}
+function fmtDiff(n){if(!Number.isFinite(n))return"—";const u=["","k","M","G","T","P","E"];let i=0;let v=Math.abs(n);while(v>=1000&&i<u.length-1){v/=1000;i++}let s=v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2);s=s.replace(/\\.0+$|(?<=\\.\\d)0+$/,"");return (n<0?"-":"")+s+u[i]}
 function fmtTime(s){if(!Number.isFinite(s))return"—";s=Math.floor(s);let d=Math.floor(s/86400);s%=86400;let h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);return(d?d+"d ":"")+(h?h+"h ":"")+(m?m+"m ":"")+s+"s"}
 function showTab(tab){currentTab=tab;["overview","best","block"].forEach(t=>{$("panel-"+t).classList.toggle("hidden",t!==tab);$("tab-"+(t==="best"?"best":t==="block"?"block":"overview")).classList.toggle("active",t===tab)})}
 async function api(url,opt){const r=await fetch(url,opt);if(!r.ok)throw Error("HTTP "+r.status);return await r.json()}
