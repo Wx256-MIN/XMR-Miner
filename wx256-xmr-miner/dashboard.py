@@ -15,9 +15,6 @@ NETWORK_REFRESH_SECONDS = 10
 ROOT = "/dashboard"
 CONFIG = "/data/config.json"
 MINER = "/opt/xmrig"
-GRPCURL = "/usr/local/bin/grpcurl"
-TARI_PROTO = "/opt/tari-proto"
-TARI_NODE_GRPC = os.environ.get("TARI_NODE_GRPC", "host.docker.internal:18142")
 
 COINS = {
     "xmr": {
@@ -124,7 +121,7 @@ def start_miner():
 
 
 def fetch_json(url, timeout=5):
-    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.3.8", "Accept": "application/json"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.4.1", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
@@ -409,11 +406,14 @@ class Handler(BaseHTTPRequestHandler):
                     "worker": worker,
                     "threads": threads,
                     "donate_level": donate,
-                                    }
+                }
             )
 
-            ok, msg = start_miner()
-            self.json_response(200 if ok else 500, {"ok": ok, "message": msg})
+            try:
+                ok, msg = start_miner()
+                self.json_response(200 if ok else 500, {"ok": ok, "message": msg})
+            except Exception as e:
+                self.json_response(500, {"ok": False, "message": "Failed to start XMRig: " + str(e)})
         except (ValueError, TypeError, json.JSONDecodeError) as e:
             self.json_response(400, {"ok": False, "message": str(e)})
 
