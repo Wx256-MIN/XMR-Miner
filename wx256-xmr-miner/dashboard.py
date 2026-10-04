@@ -12,6 +12,7 @@ NETWORK_API = "https://api.xmrig.com/1/network/XMR"
 NETWORKS_API = "https://api.xmrig.com/1/networks"
 NETWORK_CACHE_SECONDS = 10
 NETWORK_REFRESH_SECONDS = 10
+KRYPTEX_API_TIMEOUT = 8
 ROOT = "/dashboard"
 CONFIG = "/data/config.json"
 MINER = "/opt/xmrig"
@@ -121,7 +122,7 @@ def start_miner():
 
 
 def fetch_json(url, timeout=5):
-    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.4.1", "Accept": "application/json"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.4.3", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
@@ -133,323 +134,132 @@ def get_summary():
         return {}
 
 
+def fetch_text(url, timeout=8):
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Wx256-XMR-Miner/0.4.3",
+            "Accept": "text/html,application/xhtml+xml,application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", errors="replace")
+
+
+def parse_numeric(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip().replace(",", "")
+        try:
+            number = float(text)
+            return number if number > 0 else None
+        except ValueError:
+            return None
+    return None
+
+
+def find_number(value, keys):
+    if isinstance(value, dict):
+        for key in keys:
+            candidate = parse_numeric(value.get(key))
+            if candidate is not None:
+                return candidate
+        for child in value.values():
+            found = find_number(child, keys)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = find_number(child, keys)
+            if found is not None:
+                return found
+    return None
+
+
+def parse_kryptex_difficulty_page(html):
+    # Kryptex's public XTM coin page currently renders a human-readable
+    # network difficulty such as "40.08 GH". This is a fallback only when
+    # the documented JSON API is unavailable or changes response shape.
+    import re
+
+    patterns = [
+        r"mining difficulty of\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(KH|MH|GH|TH|PH|H)\\b",
+        r"difficulty[^0-9]{0,80}([0-9]+(?:\\.[0-9]+)?)\\s*(KH|MH|GH|TH|PH|H)\\b",
+    ]
+    multipliers = {
+        "H": 1,
+        "KH": 1_000,
+        "MH": 1_000_000,
+        "GH": 1_000_000_000,
+        "TH": 1_000_000_000_000,
+        "PH": 1_000_000_000_000_000,
+    }
+    for pattern in patterns:
+        match = re.search(pattern, html, flags=re.IGNORECASE)
+        if match:
+            value = float(match.group(1)) * multipliers[match.group(2).upper()]
+            if value > 0:
+                return value
+    return None
+
+
 def fetch_tari_network(cfg):
-    # Kryptex exposes Tari RandomX network hashrate/difficulty through its
-    # public API. Keep several response-shape fallbacks because the API
-    # may return the values at different nesting levels.
+    # Kryptex documents /api/v1/net/stats/{coin} as the public endpoint for
+    # network hashrate and difficulty. The XTM pool slug is xtm-rx.
     endpoints = [
         "https://pool.kryptex.com/api/v1/net/stats/xtm-rx",
         "https://pool.kryptex.com/api/v1/net/stats/xtm",
         "https://pool.kryptex.com/api/v1/coin/xtm-rx/info",
         "https://pool.kryptex.com/api/v1/coin/xtm/info",
+        "https://pool.kryptex.com/xtm-rx/about-coin",
     ]
 
-    def find_number(value, keys):
-        if isinstance(value, dict):
-            for key in keys:
-                candidate = value.get(key)
-                if isinstance(candidate, (int, float)) and candidate > 0:
-                    return candidate
-            for child in value.values():
-                found = find_number(child, keys)
-                if found is not None:
-                    return found
-        elif isinstance(value, list):
-            for child in value:
-                found = find_number(child, keys)
-                if found is not None:
-                    return found
-        return None
-
+    last_error = None
     for endpoint in endpoints:
         try:
-            data = fetch_json(endpoint, timeout=5)
+            if endpoint.endswith("about-coin"):
+                difficulty = parse_kryptex_difficulty_page(
+                    fetch_text(endpoint, timeout=KRYPTEX_API_TIMEOUT)
+                )
+                if difficulty is not None:
+                    return {
+                        "difficulty": difficulty,
+                        "height": None,
+                        "algo": "rx/0",
+                        "source": "kryptex-page",
+                    }
+                last_error = "Kryptex about-coin page did not contain a parseable difficulty"
+                continue
+
+            data = fetch_json(endpoint, timeout=KRYPTEX_API_TIMEOUT)
             difficulty = find_number(
                 data,
-                ("difficulty", "network_difficulty", "networkDifficulty"),
+                (
+                    "difficulty",
+                    "network_difficulty",
+                    "networkDifficulty",
+                    "networkDiff",
+                    "difficulty_current",
+                    "difficultyCurrent",
+                ),
             )
             height = find_number(
                 data,
-                ("height", "network_height", "networkHeight", "block_height"),
+                ("height", "network_height", "networkHeight", "block_height", "blockHeight"),
             )
             if difficulty is not None:
                 return {
                     "difficulty": difficulty,
                     "height": height,
                     "algo": "rx/0",
-                    "source": "kryptex",
+                    "source": "kryptex-api",
                 }
-        except Exception:
-            pass
+            last_error = "Kryptex API returned no difficulty field"
+        except Exception as e:
+            last_error = str(e)
 
     return None
 
-def fetch_network():
-    cfg = load_config()
-    if get_coin_config(cfg) == "tari":
-        return fetch_tari_network(cfg)
-
-    try:
-        data = fetch_json(NETWORK_API, timeout=5)
-        if isinstance(data, dict) and isinstance(data.get("difficulty"), (int, float)):
-            return data
-    except Exception:
-        pass
-
-    try:
-        data = fetch_json(NETWORKS_API, timeout=5)
-        if isinstance(data, list):
-            for item in data:
-                if isinstance(item, dict) and str(item.get("coin", "")).upper() == "XMR":
-                    if isinstance(item.get("difficulty"), (int, float)):
-                        return item
-    except Exception:
-        pass
-
-    return None
-
-
-def refresh_network(force=False):
-    global network_cache
-    now = time.time()
-
-    with network_lock:
-        if (
-            not force
-            and network_cache["data"]
-            and now - network_cache["ts"] < NETWORK_CACHE_SECONDS
-        ):
-            return network_cache["data"]
-
-    data = fetch_network()
-    if data is not None:
-        with network_lock:
-            network_cache = {"ts": time.time(), "data": data}
-            return data
-
-    with network_lock:
-        return network_cache["data"]
-
-
-def network_refresh_loop():
-    while True:
-        try:
-            refresh_network(force=True)
-        except Exception:
-            pass
-        time.sleep(NETWORK_REFRESH_SECONDS)
-
-
-def get_network():
-    with network_lock:
-        cached = network_cache["data"]
-        age = time.time() - network_cache["ts"]
-
-    if cached and age < NETWORK_CACHE_SECONDS:
-        return cached
-
-    if not cached:
-        return refresh_network(force=True)
-
-    return cached
-
-
-def get_stats():
-    cfg = load_config()
-    coin = get_coin_config(cfg)
-    coin_cfg = COINS[coin]
-    summary = get_summary()
-    network = get_network()
-
-    results = summary.get("results") or {}
-    connection = summary.get("connection") or {}
-    hashrate = summary.get("hashrate") or {}
-    total_hash = hashrate.get("total")
-    if isinstance(total_hash, list):
-        hash_value = total_hash[0] if total_hash else None
-    else:
-        hash_value = total_hash
-
-    best_values = results.get("best") or []
-    best_numbers = [float(v) for v in best_values if isinstance(v, (int, float)) and v > 0]
-    best_diff = max(best_numbers) if best_numbers else None
-
-    accepted = connection.get("accepted")
-    if accepted is None:
-        accepted = results.get("shares_good")
-
-    rejected = connection.get("rejected")
-    if rejected is None:
-        shares_total = results.get("shares_total")
-        shares_good = results.get("shares_good")
-        if isinstance(shares_total, (int, float)) and isinstance(shares_good, (int, float)):
-            rejected = max(0, shares_total - shares_good)
-
-    pool_diff = connection.get("diff")
-    if pool_diff is None:
-        pool_diff = results.get("diff_current")
-
-    network_diff = network.get("difficulty")
-    network_height = network.get("height")
-    network_algo = network.get("algo") or coin_cfg["algorithm"]
-
-    with network_lock:
-        network_updated_at = network_cache.get("ts") or None
-
-    block_candidate = (
-        coin == "xmr"
-        and isinstance(best_diff, (int, float))
-        and isinstance(network_diff, (int, float))
-        and network_diff > 0
-        and best_diff >= network_diff
-    )
-
-    return {
-        "running": miner_running(),
-        "coin": coin,
-        "coin_name": coin_cfg["name"],
-        "symbol": coin_cfg["symbol"],
-        "hashrate": hash_value,
-        "accepted": accepted,
-        "rejected": rejected,
-        "uptime": summary.get("uptime"),
-        "worker": summary.get("worker_id") or cfg.get("worker", "umbrel"),
-        "pool": connection.get("pool") or cfg.get("pool"),
-        "pool_diff": pool_diff,
-        "best_diff": best_diff,
-        "network_difficulty": network_diff,
-        "network_algorithm": network_algo,
-        "network_height": network_height,
-        "network_updated_at": network_updated_at if network else None,
-        "network_live": bool(network.get("difficulty")),
-        "network_source": "kryptex-api" if coin == "tari" else "xmrig-network-api",
-        "block_candidate": block_candidate,
-    }
-
-
-class Handler(BaseHTTPRequestHandler):
-    def send(self, code, ctype, data):
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(data)
-
-    def json_response(self, code, obj):
-        self.send(
-            code,
-            "application/json; charset=utf-8",
-            json.dumps(obj).encode("utf-8"),
-        )
-
-    def do_GET(self):
-        if self.path in ("/", "/index.html"):
-            with open(ROOT + "/index.html", "rb") as f:
-                self.send(200, "text/html; charset=utf-8", f.read())
-            return
-
-        if self.path == "/favicon.svg":
-            with open(ROOT + "/favicon.svg", "rb") as f:
-                self.send(200, "image/svg+xml", f.read())
-            return
-
-        if self.path == "/api/config":
-            cfg = load_config()
-            public = cfg.copy()
-            if public.get("wallet"):
-                public["wallet"] = public["wallet"][:8] + "…" + public["wallet"][-6:]
-            coin = get_coin_config(cfg)
-            public["coin"] = coin
-            self.json_response(
-                200,
-                {
-                    "configured": bool(cfg.get("pool") and cfg.get("wallet")),
-                    "config": public,
-                    "coin": COINS[coin],
-                    "coins": COINS,
-                    "running": miner_running(),
-                },
-            )
-            return
-
-        if self.path == "/api/stats":
-            self.json_response(200, get_stats())
-            return
-
-        if self.path.startswith("/2/") or self.path.startswith("/1/"):
-            try:
-                with urllib.request.urlopen(API + self.path, timeout=5) as r:
-                    data = r.read()
-                self.send(200, "application/json", data)
-            except Exception as e:
-                self.send(
-                    503,
-                    "application/json",
-                    json.dumps({"error": str(e)}).encode("utf-8"),
-                )
-            return
-
-        self.send(404, "text/plain; charset=utf-8", b"Not found")
-
-    def do_POST(self):
-        if self.path == "/api/stop":
-            stop_miner()
-            self.json_response(200, {"ok": True, "message": "Mining stopped"})
-            return
-
-        if self.path == "/api/start":
-            ok, msg = start_miner()
-            self.json_response(200 if ok else 400, {"ok": ok, "message": msg})
-            return
-
-        if self.path != "/api/config":
-            self.send(404, "text/plain; charset=utf-8", b"Not found")
-            return
-
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-            body = json.loads(self.rfile.read(length))
-
-            coin = str(body.get("coin", DEFAULT_COIN)).strip().lower()
-            if coin not in COINS:
-                raise ValueError("Unsupported coin")
-            pool = str(body.get("pool", "")).strip()
-            wallet = str(body.get("wallet", "")).strip()
-            worker = str(body.get("worker", "umbrel")).strip() or "umbrel"
-            threads = int(body.get("threads", 0))
-            donate = int(body.get("donate_level", 1))
-
-            if not pool or not wallet:
-                raise ValueError("Pool URL and wallet address are required")
-            if threads < 0 or donate < 0:
-                raise ValueError("Threads and donation level cannot be negative")
-            if threads > 1024:
-                raise ValueError("CPU threads value is too high")
-            if donate > 100:
-                raise ValueError("Donation level must be between 0 and 100")
-
-            save_config(
-                {
-                    "coin": coin,
-                    "pool": pool,
-                    "wallet": wallet,
-                    "worker": worker,
-                    "threads": threads,
-                    "donate_level": donate,
-                }
-            )
-
-            try:
-                ok, msg = start_miner()
-                self.json_response(200 if ok else 500, {"ok": ok, "message": msg})
-            except Exception as e:
-                self.json_response(500, {"ok": False, "message": "Failed to start XMRig: " + str(e)})
-        except (ValueError, TypeError, json.JSONDecodeError) as e:
-            self.json_response(400, {"ok": False, "message": str(e)})
-
-    def log_message(self, *args):
-        pass
-
-
-threading.Thread(target=network_refresh_loop, daemon=True).start()
-ThreadingHTTPServer(("0.0.0.0", 80), Handler).serve_forever()
