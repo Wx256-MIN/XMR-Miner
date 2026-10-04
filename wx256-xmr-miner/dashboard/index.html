@@ -9,7 +9,7 @@ main{max-width:1050px;margin:auto;padding:28px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}.card{background:#151922;border:1px solid #262b36;border-radius:14px;padding:18px}.label{color:#9aa2b1;font-size:13px}.value{font-size:25px;font-weight:700;margin-top:7px}.hero{font-size:34px;letter-spacing:-.5px}.wide{margin-top:14px}.muted{color:#9aa2b1}input{width:100%;box-sizing:border-box;padding:11px 12px;margin:6px 0 12px;border-radius:9px;border:1px solid #303745;background:#0f131b;color:#fff}button{padding:10px 15px;border:0;border-radius:9px;background:#f97316;color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#343b48}.hidden{display:none!important}.error{color:#ff8c9a}.ok{color:#6ee7a0}.found{background:#183b28!important;border-color:#2d7a4a!important}.notfound{background:#151922}.ratio{font-size:14px;margin-top:8px;color:#9aa2b1}.note{line-height:1.55}
 </style></head>
 <body><main>
-<div class="top"><div class="brand"><img class="logo" src="/favicon.svg"><div><h1 style="margin:0">XMR Miner</h1><div class="muted">Monero CPU mining • XMRig</div></div></div><div id="status" class="badge">Checking…</div></div>
+<div class="top"><div class="brand"><img class="logo" src="/favicon.svg"><div><h1 style="margin:0">XMR Miner</h1><div class="muted">Monero CPU mining • RandomX • XMRig</div></div></div><div id="status" class="badge">Checking…</div></div>
 
 <section id="setup" class="card hidden"><h2 style="margin-top:0">Miner setup</h2><p class="muted">Enter your Monero pool and wallet. Configuration is saved locally on your Umbrel.</p><label>Pool URL</label><input id="pool" placeholder="pool.example.com:3333"><label>Monero wallet address</label><input id="wallet" placeholder="4... or 8..."><label>Worker name</label><input id="worker" value="umbrel"><label>CPU threads <span class="muted">(0 = automatic)</span></label><input id="threads" type="number" min="0" value="0"><label>Donation level %</label><input id="donate" type="number" min="0" value="1"><button onclick="save()">Save & Start Mining</button><p id="message"></p></section>
 
@@ -32,6 +32,7 @@ main{max-width:1050px;margin:auto;padding:28px}
 <div class="card"><div class="label">Best Share Difficulty</div><div id="bestDiff" class="value hero">—</div><div id="bestDiffRaw" class="ratio">—</div></div>
 <div class="card"><div class="label">Current Pool Difficulty</div><div id="poolDiff" class="value">—</div></div>
 <div class="card"><div class="label">Network Difficulty</div><div id="networkDiff" class="value">—</div><div id="networkUpdated" class="ratio">Live update: —</div></div>
+<div class="card"><div class="label">PoW Algorithm</div><div id="networkAlgo" class="value">RandomX</div><div class="ratio">Monero • rx/0</div></div>
 <div class="card"><div class="label">Best / Network</div><div id="bestRatio" class="value">—</div></div>
 </div>
 <div class="card wide note"><b>Best Diff</b> is the highest share difficulty reported by XMRig. XMRig exposes this as the <code>results.best</code> array in its miner API. citeturn445992search0</div>
@@ -47,6 +48,7 @@ main{max-width:1050px;margin:auto;padding:28px}
 <div class="card"><div class="label">Best Share Difficulty</div><div id="blockBestDiff" class="value">—</div></div>
 <div class="card"><div class="label">Network Difficulty</div><div id="blockNetworkDiff" class="value">—</div></div>
 <div class="card"><div class="label">Network Height</div><div id="blockHeight" class="value">—</div></div>
+<div class="card"><div class="label">PoW Algorithm</div><div id="blockAlgo" class="value">RandomX</div></div>
 </div>
 <div class="card wide note">This dashboard can identify a <b>block-level share candidate</b> when the best share difficulty reaches the current network difficulty. Final block confirmation still comes from the mining pool or a Monero node; the XMRig local API reports miner statistics rather than pool-confirmed block events.</div>
 </div>
@@ -68,8 +70,8 @@ async function stop(){await api("/api/stop",{method:"POST"});$("status").textCon
 function renderStats(x){
 $("status").textContent=x.running?"Mining":"Miner offline";$("status").style.background=x.running?"#183b28":"#4a1d24";
 $("hash").textContent=fmtHash(x.hashrate);$("accepted").textContent=x.accepted??"—";$("rejected").textContent=x.rejected??"—";$("uptime").textContent=fmtTime(x.uptime);$("workerName").textContent=x.worker||"configured worker";$("poolName").textContent=x.pool||"Connected to configured pool";
-$("bestDiff").textContent=fmtDiff(x.best_diff);$("bestDiffRaw").textContent=Number.isFinite(x.best_diff)?x.best_diff.toLocaleString()+" raw difficulty":"—";$("poolDiff").textContent=fmtDiff(x.pool_diff);$("networkDiff").textContent=fmtDiff(x.network_difficulty);$("networkUpdated").textContent=x.network_live?"Live • updated "+new Date((x.network_updated_at||0)*1000).toLocaleTimeString():"Network data unavailable";$("bestRatio").textContent=Number.isFinite(x.best_diff)&&Number.isFinite(x.network_difficulty)&&x.network_difficulty>0?(x.best_diff/x.network_difficulty*100).toFixed(4)+"%":"—";
-$("blockBestDiff").textContent=fmtDiff(x.best_diff);$("blockNetworkDiff").textContent=fmtDiff(x.network_difficulty);$("blockHeight").textContent=Number.isFinite(x.network_height)?x.network_height.toLocaleString():"—";
+$("bestDiff").textContent=fmtDiff(x.best_diff);$("bestDiffRaw").textContent=Number.isFinite(x.best_diff)?x.best_diff.toLocaleString()+" raw difficulty":"—";$("poolDiff").textContent=fmtDiff(x.pool_diff);$("networkDiff").textContent=fmtDiff(x.network_difficulty);$("networkAlgo").textContent=(x.network_algorithm==="rx/0"?"RandomX":(x.network_algorithm||"RandomX"));$("networkUpdated").textContent=x.network_live?"Live • updated "+new Date((x.network_updated_at||0)*1000).toLocaleTimeString():"Network data unavailable";$("bestRatio").textContent=Number.isFinite(x.best_diff)&&Number.isFinite(x.network_difficulty)&&x.network_difficulty>0?(x.best_diff/x.network_difficulty*100).toFixed(4)+"%":"—";
+$("blockBestDiff").textContent=fmtDiff(x.best_diff);$("blockNetworkDiff").textContent=fmtDiff(x.network_difficulty);$("blockHeight").textContent=Number.isFinite(x.network_height)?x.network_height.toLocaleString():"—";$("blockAlgo").textContent=x.network_algorithm==="rx/0"?"RandomX":(x.network_algorithm||"RandomX");
 const found=!!x.block_candidate;$("blockCard").className="card wide "+(found?"found":"notfound");$("blockStatus").textContent=found?"BLOCK CANDIDATE DETECTED":"NO BLOCK FOUND";$("blockReason").textContent=found?"Best share difficulty has reached or exceeded the current network difficulty. Confirm the block on your pool/node.":"Waiting for a share at or above the current network difficulty.";
 }
 async function refresh(){try{const x=await api("/api/stats");renderStats(x)}catch(e){$("status").textContent="Miner offline";$("status").style.background="#4a1d24"}}
