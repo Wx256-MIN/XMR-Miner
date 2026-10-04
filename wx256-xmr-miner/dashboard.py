@@ -9,6 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 API = "http://127.0.0.1:8080"
 NETWORK_API = "https://api.xmrig.com/1/network/XMR"
+NETWORKS_API = "https://api.xmrig.com/1/networks"
+NETWORK_CACHE_SECONDS = 10
 ROOT = "/dashboard"
 CONFIG = "/data/config.json"
 MINER = "/opt/xmrig"
@@ -99,14 +101,25 @@ def get_network():
     global network_cache
     now = time.time()
     with network_lock:
-        if now - network_cache["ts"] < 30 and network_cache["data"]:
+        if now - network_cache["ts"] < NETWORK_CACHE_SECONDS and network_cache["data"]:
             return network_cache["data"]
 
         try:
-            data = fetch_json(NETWORK_API, timeout=5)
+            data = fetch_json(NETWORK_API, timeout=4)
+            if not isinstance(data, dict) or not isinstance(data.get("difficulty"), (int, float)):
+                raise ValueError("Invalid network difficulty response")
             network_cache = {"ts": now, "data": data}
             return data
         except Exception:
+            try:
+                networks = fetch_json(NETWORKS_API, timeout=4)
+                if isinstance(networks, list):
+                    data = next((item for item in networks if item.get("coin") == "XMR"), {})
+                    if isinstance(data.get("difficulty"), (int, float)):
+                        network_cache = {"ts": now, "data": data}
+                        return data
+            except Exception:
+                pass
             return network_cache["data"]
 
 
@@ -165,6 +178,8 @@ def get_stats():
         "best_diff": best_diff,
         "network_difficulty": network_diff,
         "network_height": network_height,
+        "network_updated_at": network_cache.get("ts") or None,
+        "network_live": bool(network.get("difficulty")),
         "block_candidate": block_candidate,
     }
 
