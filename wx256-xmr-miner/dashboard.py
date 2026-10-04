@@ -134,10 +134,9 @@ def get_summary():
 
 
 def fetch_tari_network(cfg):
-    # For Tari RandomX, use Kryptex's public XTM-RX coin page as the
-    # authoritative display source. The generic net/stats API can expose
-    # a pool/share difficulty that is not the network difficulty shown
-    # on Kryptex's XTM-RX chart.
+    # Kryptex's XTM-RX coin page is the authoritative source for the
+    # network difficulty displayed on its chart. Do not use the generic
+    # net/stats value first because it can represent a pool/share value.
     import re
 
     try:
@@ -145,13 +144,14 @@ def fetch_tari_network(cfg):
             "https://pool.kryptex.com/xtm-rx/about-coin",
             timeout=8,
         )
-        text = re.sub(r"<[^>]+>", " ", html)
-        match = re.search(
-            r"mining difficulty of\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(KH|MH|GH|TH|PH|H)\\b",
-            text,
-            flags=re.IGNORECASE,
-        )
-        if match:
+        text = re.sub("<[^>]+>", " ", html)
+        lower = text.lower()
+        marker = "mining difficulty"
+        pos = lower.find(marker)
+
+        if pos >= 0:
+            tail = text[pos:pos + 120]
+            parts = tail.replace(",", " ").split()
             units = {
                 "H": 1,
                 "KH": 1_000,
@@ -160,18 +160,29 @@ def fetch_tari_network(cfg):
                 "TH": 1_000_000_000_000,
                 "PH": 1_000_000_000_000_000,
             }
-            difficulty = float(match.group(1)) * units[match.group(2).upper()]
-            if difficulty > 0:
-                return {
-                    "difficulty": difficulty,
-                    "height": None,
-                    "algo": "rx/0",
-                    "source": "kryptex-page",
-                }
+
+            for index, part in enumerate(parts):
+                try:
+                    number = float(part)
+                except ValueError:
+                    continue
+
+                if index + 1 < len(parts):
+                    unit = parts[index + 1].upper().strip(".,:;)")
+                    multiplier = units.get(unit)
+                    if multiplier:
+                        difficulty = number * multiplier
+                        if difficulty > 0:
+                            return {
+                                "difficulty": difficulty,
+                                "height": None,
+                                "algo": "rx/0",
+                                "source": "kryptex-page",
+                            }
     except Exception:
         pass
 
-    # API fallback only if the public coin page cannot be parsed.
+    # API fallback only when the public coin page is unavailable.
     endpoints = [
         "https://pool.kryptex.com/api/v1/coin/xtm-rx/info",
         "https://pool.kryptex.com/api/v1/coin/xtm/info",
