@@ -24,11 +24,10 @@ Tari mainnet has separate PoW lanes, including Monero merge-mined RandomX and Ta
 
 ## Tari network difficulty
 
-Tari network difficulty cannot be taken from the Monero/XMRig network API. Tari maintains independent difficulty for RandomXM, RandomXT, SHA3x and Cuckaroo. The dashboard therefore queries the Tari Base Node `GetNetworkDifficulty` gRPC method and selects the latest `RandomXT` (`pow_algo=2`) result. citeturn1search2turn7search0
+For Tari XTM-RX on Kryptex, the dashboard reads live network difficulty from Kryptex's public API endpoint for network hashrate and difficulty. This does not require a Tari Base Node on the Umbrel host. Kryptex documents the network endpoint as `/api/v1/net/stats/{coin}`, and its Tari RandomX pool is XTM-RX on port 7038. citeturn3search0turn1search1
 
-When selecting Tari in the dashboard, set **Tari Base Node gRPC** to a reachable node such as `host.docker.internal:18142` when the node runs on the Umbrel host. Tari documents port 18142 as the Base Node gRPC endpoint and `GetNetworkDifficulty` as the network difficulty API. citeturn8search0turn7search1
+The dashboard therefore shows **Kryptex API** as the source when Tari network difficulty is live.
 
-The Tari node must allow `get_network_difficulty` in its gRPC server methods. citeturn8search2
 
 ## Tari mining configuration
 
