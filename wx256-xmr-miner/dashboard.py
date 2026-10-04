@@ -134,50 +134,78 @@ def get_summary():
 
 
 def fetch_tari_network(cfg):
-    # Kryptex exposes Tari RandomX network hashrate/difficulty through its
-    # public API. Keep several response-shape fallbacks because the API
-    # may return the values at different nesting levels.
+    # For Tari RandomX, use Kryptex's public XTM-RX coin page as the
+    # authoritative display source. The generic net/stats API can expose
+    # a pool/share difficulty that is not the network difficulty shown
+    # on Kryptex's XTM-RX chart.
+    import re
+
+    try:
+        html = fetch_text(
+            "https://pool.kryptex.com/xtm-rx/about-coin",
+            timeout=8,
+        )
+        text = re.sub(r"<[^>]+>", " ", html)
+        match = re.search(
+            r"mining difficulty of\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(KH|MH|GH|TH|PH|H)\\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            units = {
+                "H": 1,
+                "KH": 1_000,
+                "MH": 1_000_000,
+                "GH": 1_000_000_000,
+                "TH": 1_000_000_000_000,
+                "PH": 1_000_000_000_000_000,
+            }
+            difficulty = float(match.group(1)) * units[match.group(2).upper()]
+            if difficulty > 0:
+                return {
+                    "difficulty": difficulty,
+                    "height": None,
+                    "algo": "rx/0",
+                    "source": "kryptex-page",
+                }
+    except Exception:
+        pass
+
+    # API fallback only if the public coin page cannot be parsed.
     endpoints = [
-        "https://pool.kryptex.com/api/v1/net/stats/xtm-rx",
-        "https://pool.kryptex.com/api/v1/net/stats/xtm",
         "https://pool.kryptex.com/api/v1/coin/xtm-rx/info",
         "https://pool.kryptex.com/api/v1/coin/xtm/info",
     ]
 
-    def find_number(value, keys):
-        if isinstance(value, dict):
-            for key in keys:
-                candidate = value.get(key)
-                if isinstance(candidate, (int, float)) and candidate > 0:
-                    return candidate
-            for child in value.values():
-                found = find_number(child, keys)
-                if found is not None:
-                    return found
-        elif isinstance(value, list):
-            for child in value:
-                found = find_number(child, keys)
-                if found is not None:
-                    return found
-        return None
-
     for endpoint in endpoints:
         try:
-            data = fetch_json(endpoint, timeout=5)
-            difficulty = find_number(
-                data,
-                ("difficulty", "network_difficulty", "networkDifficulty"),
-            )
-            height = find_number(
-                data,
-                ("height", "network_height", "networkHeight", "block_height"),
-            )
-            if difficulty is not None:
+            data = fetch_json(endpoint, timeout=8)
+            if not isinstance(data, dict):
+                continue
+
+            difficulty = data.get("difficulty")
+            if isinstance(difficulty, str):
+                parts = difficulty.replace(",", " ").split()
+                if len(parts) >= 2:
+                    units = {
+                        "H": 1,
+                        "KH": 1_000,
+                        "MH": 1_000_000,
+                        "GH": 1_000_000_000,
+                        "TH": 1_000_000_000_000,
+                        "PH": 1_000_000_000_000_000,
+                    }
+                    try:
+                        difficulty = float(parts[0]) * units.get(parts[1].upper(), 1)
+                    except ValueError:
+                        difficulty = None
+
+            if isinstance(difficulty, (int, float)) and difficulty > 0:
                 return {
-                    "difficulty": difficulty,
-                    "height": height,
+                    "difficulty": float(difficulty),
+                    "height": data.get("height"),
                     "algo": "rx/0",
-                    "source": "kryptex",
+                    "source": "kryptex-api",
                 }
         except Exception:
             pass
