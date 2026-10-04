@@ -141,16 +141,16 @@ def fetch_tari_network(cfg):
 
     try:
         html = fetch_text(
-            "https://pool.kryptex.com/xtm-rx/about-coin",
+            "https://pool.kryptex.com/xtm-rx/difficulty",
             timeout=8,
         )
         text = re.sub("<[^>]+>", " ", html)
         lower = text.lower()
-        marker = "mining difficulty"
+        marker = "tari randomx xtm network difficulty"
         pos = lower.find(marker)
 
         if pos >= 0:
-            tail = text[pos:pos + 120]
+            tail = text[pos:pos + 5000]
             parts = tail.replace(",", " ").split()
             units = {
                 "H": 1,
@@ -184,8 +184,8 @@ def fetch_tari_network(cfg):
 
     # API fallback only when the public coin page is unavailable.
     endpoints = [
+        "https://pool.kryptex.com/api/v1/net/stats/xtm-rx",
         "https://pool.kryptex.com/api/v1/coin/xtm-rx/info",
-        "https://pool.kryptex.com/api/v1/coin/xtm/info",
     ]
 
     for endpoint in endpoints:
@@ -216,7 +216,7 @@ def fetch_tari_network(cfg):
                     "difficulty": float(difficulty),
                     "height": data.get("height"),
                     "algo": "rx/0",
-                    "source": "kryptex-api",
+                    "source": "kryptex-xtm-rx-api",
                 }
         except Exception:
             pass
