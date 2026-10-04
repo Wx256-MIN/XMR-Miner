@@ -157,7 +157,23 @@ def parse_numeric(value):
             number = float(text)
             return number if number > 0 else None
         except ValueError:
-            return None
+            parts = text.split()
+            if len(parts) >= 2:
+                try:
+                    number = float(parts[0])
+                except ValueError:
+                    return None
+                multipliers = {
+                    "H": 1,
+                    "KH": 1_000,
+                    "MH": 1_000_000,
+                    "GH": 1_000_000_000,
+                    "TH": 1_000_000_000_000,
+                    "PH": 1_000_000_000_000_000,
+                }
+                multiplier = multipliers.get(parts[1].upper())
+                if multiplier:
+                    return number * multiplier
     return None
 
 
