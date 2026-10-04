@@ -12,8 +12,6 @@ RUN apt-get update \
 
 WORKDIR /src
 
-RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/tari-project/tari.git tari     && git -C tari sparse-checkout set applications/minotari_app_grpc/proto     && mkdir -p /opt/tari-proto     && cp -a tari/applications/minotari_app_grpc/proto/. /opt/tari-proto/     && GOBIN=/usr/local/bin go install github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.9.2
-
 RUN git clone --depth 1 --branch "v${XMRIG_VERSION}" https://github.com/xmrig/xmrig.git xmrig \
     && cmake -S xmrig -B xmrig/build -DCMAKE_BUILD_TYPE=Release -DWITH_HWLOC=ON -DWITH_HTTPD=ON -DWITH_TLS=ON -DWITH_OPENCL=OFF -DWITH_CUDA=OFF \
     && cmake --build xmrig/build --config Release --parallel "$(nproc)" \
