@@ -6,7 +6,7 @@ FROM ubuntu:24.04 AS builder
 ARG XMRIG_VERSION
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git build-essential cmake golang-go \
+    && apt-get install -y --no-install-recommends ca-certificates git build-essential cmake \
        libuv1-dev libssl-dev libhwloc-dev libmicrohttpd-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,8 +27,6 @@ RUN apt-get update \
     && useradd --system --uid 10001 --create-home --home-dir /data xmrig
 
 COPY --from=builder /src/xmrig/build/xmrig /opt/xmrig
-COPY --from=builder /usr/local/bin/grpcurl /usr/local/bin/grpcurl
-COPY --from=builder /opt/tari-proto /opt/tari-proto
 COPY entrypoint.sh /entrypoint.sh
 COPY dashboard.py /dashboard.py
 COPY dashboard /dashboard
