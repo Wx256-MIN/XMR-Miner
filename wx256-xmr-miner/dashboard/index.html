@@ -31,7 +31,7 @@ main{max-width:1050px;margin:auto;padding:28px}
 <div class="grid">
 <div class="card"><div class="label">Best Share Difficulty</div><div id="bestDiff" class="value hero">—</div><div id="bestDiffRaw" class="ratio">—</div></div>
 <div class="card"><div class="label">Current Pool Difficulty</div><div id="poolDiff" class="value">—</div></div>
-<div class="card"><div class="label">Network Difficulty</div><div id="networkDiff" class="value">—</div></div>
+<div class="card"><div class="label">Network Difficulty</div><div id="networkDiff" class="value">—</div><div id="networkUpdated" class="ratio">Live update: —</div></div>
 <div class="card"><div class="label">Best / Network</div><div id="bestRatio" class="value">—</div></div>
 </div>
 <div class="card wide note"><b>Best Diff</b> is the highest share difficulty reported by XMRig. XMRig exposes this as the <code>results.best</code> array in its miner API. citeturn445992search0</div>
@@ -68,7 +68,7 @@ async function stop(){await api("/api/stop",{method:"POST"});$("status").textCon
 function renderStats(x){
 $("status").textContent=x.running?"Mining":"Miner offline";$("status").style.background=x.running?"#183b28":"#4a1d24";
 $("hash").textContent=fmtHash(x.hashrate);$("accepted").textContent=x.accepted??"—";$("rejected").textContent=x.rejected??"—";$("uptime").textContent=fmtTime(x.uptime);$("workerName").textContent=x.worker||"configured worker";$("poolName").textContent=x.pool||"Connected to configured pool";
-$("bestDiff").textContent=fmtDiff(x.best_diff);$("bestDiffRaw").textContent=Number.isFinite(x.best_diff)?x.best_diff.toLocaleString()+" raw difficulty":"—";$("poolDiff").textContent=fmtDiff(x.pool_diff);$("networkDiff").textContent=fmtDiff(x.network_difficulty);$("bestRatio").textContent=Number.isFinite(x.best_diff)&&Number.isFinite(x.network_difficulty)&&x.network_difficulty>0?(x.best_diff/x.network_difficulty*100).toFixed(4)+"%":"—";
+$("bestDiff").textContent=fmtDiff(x.best_diff);$("bestDiffRaw").textContent=Number.isFinite(x.best_diff)?x.best_diff.toLocaleString()+" raw difficulty":"—";$("poolDiff").textContent=fmtDiff(x.pool_diff);$("networkDiff").textContent=fmtDiff(x.network_difficulty);$("networkUpdated").textContent=x.network_live?"Live • updated "+new Date((x.network_updated_at||0)*1000).toLocaleTimeString():"Network data unavailable";$("bestRatio").textContent=Number.isFinite(x.best_diff)&&Number.isFinite(x.network_difficulty)&&x.network_difficulty>0?(x.best_diff/x.network_difficulty*100).toFixed(4)+"%":"—";
 $("blockBestDiff").textContent=fmtDiff(x.best_diff);$("blockNetworkDiff").textContent=fmtDiff(x.network_difficulty);$("blockHeight").textContent=Number.isFinite(x.network_height)?x.network_height.toLocaleString():"—";
 const found=!!x.block_candidate;$("blockCard").className="card wide "+(found?"found":"notfound");$("blockStatus").textContent=found?"BLOCK CANDIDATE DETECTED":"NO BLOCK FOUND";$("blockReason").textContent=found?"Best share difficulty has reached or exceeded the current network difficulty. Confirm the block on your pool/node.":"Waiting for a share at or above the current network difficulty.";
 }
