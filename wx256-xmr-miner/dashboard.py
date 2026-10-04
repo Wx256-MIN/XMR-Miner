@@ -134,24 +134,54 @@ def get_summary():
 
 
 def fetch_tari_network(cfg):
-    # Kryptex publishes XTM-RX network hashrate and difficulty through its
-    # public API. This avoids requiring a Tari Base Node on the Umbrel host.
-    for coin_id in ("xtm-rx", "xtm"):
+    # Kryptex exposes Tari RandomX network hashrate/difficulty through its
+    # public API. Keep several response-shape fallbacks because the API
+    # may return the values at different nesting levels.
+    endpoints = [
+        "https://pool.kryptex.com/api/v1/net/stats/xtm-rx",
+        "https://pool.kryptex.com/api/v1/net/stats/xtm",
+        "https://pool.kryptex.com/api/v1/coin/xtm-rx/info",
+        "https://pool.kryptex.com/api/v1/coin/xtm/info",
+    ]
+
+    def find_number(value, keys):
+        if isinstance(value, dict):
+            for key in keys:
+                candidate = value.get(key)
+                if isinstance(candidate, (int, float)) and candidate > 0:
+                    return candidate
+            for child in value.values():
+                found = find_number(child, keys)
+                if found is not None:
+                    return found
+        elif isinstance(value, list):
+            for child in value:
+                found = find_number(child, keys)
+                if found is not None:
+                    return found
+        return None
+
+    for endpoint in endpoints:
         try:
-            data = fetch_json("https://pool.kryptex.com/api/v1/net/stats/" + coin_id, timeout=5)
-            if isinstance(data, dict):
-                payload = data.get("data") if isinstance(data.get("data"), dict) else data
-                difficulty = payload.get("difficulty") or payload.get("network_difficulty")
-                height = payload.get("height") or payload.get("network_height")
-                if isinstance(difficulty, (int, float)):
-                    return {
-                        "difficulty": difficulty,
-                        "height": height,
-                        "algo": "rx/0",
-                        "source": "kryptex",
-                    }
+            data = fetch_json(endpoint, timeout=5)
+            difficulty = find_number(
+                data,
+                ("difficulty", "network_difficulty", "networkDifficulty"),
+            )
+            height = find_number(
+                data,
+                ("height", "network_height", "networkHeight", "block_height"),
+            )
+            if difficulty is not None:
+                return {
+                    "difficulty": difficulty,
+                    "height": height,
+                    "algo": "rx/0",
+                    "source": "kryptex",
+                }
         except Exception:
             pass
+
     return None
 
 def fetch_network():
