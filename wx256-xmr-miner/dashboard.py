@@ -121,7 +121,7 @@ def start_miner():
 
 
 def fetch_json(url, timeout=5):
-    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.4.6", "Accept": "application/json"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.4.8", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
@@ -130,7 +130,7 @@ def fetch_text(url, timeout=5):
     req = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "Wx256-XMR-Miner/0.4.6",
+            "User-Agent": "Wx256-XMR-Miner/0.4.8",
             "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
         },
     )
@@ -223,17 +223,46 @@ def fetch_tari_network(cfg):
         except Exception:
             pass
 
-    # The chart page itself remains the configured/default source. Some
-    # versions render the chart client-side, so only accept a number if
-    # it is explicitly associated with a network-difficulty data value.
+    # Kryptex also exposes the XTM-RX difficulty in the server-rendered
+    # About XTM page. Use it when the public JSON endpoint is unavailable
+    # or changes response shape.
+    try:
+        html = fetch_text(
+            "https://pool.kryptex.com/xtm-rx/about-coin",
+            timeout=8,
+        )
+        text = re.sub(r"<[^>]+>", " ", html)
+        marker = "mining difficulty of"
+        pos = text.lower().find(marker)
+        if pos >= 0:
+            tail = text[pos + len(marker):pos + len(marker) + 120]
+            match = re.search(
+                r"([0-9]+(?:\.[0-9]+)?)\s*(H|KH|MH|GH|TH|PH)\b",
+                tail,
+                re.IGNORECASE,
+            )
+            if match:
+                difficulty = float(match.group(1)) * units[match.group(2).upper()]
+                if difficulty >= 1_000_000_000:
+                    return {
+                        "difficulty": difficulty,
+                        "height": None,
+                        "algo": "rx/0",
+                        "source": "kryptex-xtm-rx-about",
+                    }
+    except Exception:
+        pass
+
+    # Finally inspect the difficulty chart page. The chart is normally
+    # rendered client-side, so only accept an explicitly embedded value.
     try:
         html = fetch_text(
             "https://pool.kryptex.com/xtm-rx/difficulty",
             timeout=8,
         )
         patterns = [
-            r'(?i)"(?:difficulty|networkDifficulty|network_difficulty)"\\s*[:=]\\s*"?([0-9]+(?:\\.[0-9]+)?)\\s*(H|KH|MH|GH|TH|PH)?',
-            r'(?i)(?:network[ _-]?difficulty)[^0-9]{0,80}([0-9]+(?:\\.[0-9]+)?)\\s*(H|KH|MH|GH|TH|PH)\\b',
+            r'(?i)"(?:difficulty|networkDifficulty|network_difficulty)"\s*[:=]\s*"?([0-9]+(?:\.[0-9]+)?)\s*(H|KH|MH|GH|TH|PH)?',
+            r'(?i)(?:network[ _-]?difficulty)[^0-9]{0,80}([0-9]+(?:\.[0-9]+)?)\s*(H|KH|MH|GH|TH|PH)\b',
         ]
         for pattern in patterns:
             match = re.search(pattern, html)
@@ -247,7 +276,7 @@ def fetch_tari_network(cfg):
                     "difficulty": difficulty,
                     "height": None,
                     "algo": "rx/0",
-                    "source": "kryptex-xtm-rx",
+                    "source": "kryptex-xtm-rx-chart",
                 }
     except Exception:
         pass
