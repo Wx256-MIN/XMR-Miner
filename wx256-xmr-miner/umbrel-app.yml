@@ -4,7 +4,7 @@ name: CPU RandomX Miner
 tagline: Monero XMR and Tari XTM CPU mining with XMRig
 icon: https://raw.githubusercontent.com/Wx256-MIN/XMR-Miner/main/wx256-xmr-miner/dashboard/favicon.svg
 category: finance
-version: "0.4.6"
+version: "0.4.7"
 port: 8099
 description: >-
   CPU RandomX miner for UmbrelOS powered by XMRig, with support for
