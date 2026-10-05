@@ -146,115 +146,111 @@ def get_summary():
 
 
 def fetch_tari_network(cfg):
-    # Kryptex's XTM-RX coin page is the authoritative source for the
-    # network difficulty displayed on its chart. Do not use the generic
-    # net/stats value first because it can represent a pool/share value.
+    # Kryptex XTM-RX is the authoritative source requested for Tari
+    # network difficulty. The public chart page is the UI source, while
+    # Kryptex's public network endpoint supplies the numeric value used
+    # by that chart. Never accept pool/share difficulty here.
     import re
 
-    try:
-        html = fetch_text(
-            "https://pool.kryptex.com/xtm-rx/difficulty",
-            timeout=8,
-        )
-        text = re.sub("<[^>]+>", " ", html)
-        lower = text.lower()
-        marker = "tari randomx xtm network difficulty"
-        pos = lower.find(marker)
+    units = {
+        "H": 1,
+        "KH": 1_000,
+        "MH": 1_000_000,
+        "GH": 1_000_000_000,
+        "TH": 1_000_000_000_000,
+        "PH": 1_000_000_000_000_000,
+    }
 
-        if pos >= 0:
-            tail = text[pos:pos + 5000]
-            parts = tail.replace(",", " ").split()
-            units = {
-                "H": 1,
-                "KH": 1_000,
-                "MH": 1_000_000,
-                "GH": 1_000_000_000,
-                "TH": 1_000_000_000_000,
-                "PH": 1_000_000_000_000_000,
-            }
+    def normalize(value):
+        if isinstance(value, (int, float)) and value >= 1_000_000_000:
+            return float(value)
+        if isinstance(value, str):
+            match = re.search(
+                r"([0-9]+(?:\\.[0-9]+)?)\\s*(H|KH|MH|GH|TH|PH)\\b",
+                value,
+                re.IGNORECASE,
+            )
+            if match:
+                number = float(match.group(1)) * units[match.group(2).upper()]
+                return number if number >= 1_000_000_000 else None
+            try:
+                number = float(value.replace(",", "").strip())
+                return number if number >= 1_000_000_000 else None
+            except ValueError:
+                return None
+        return None
 
-            for index, part in enumerate(parts):
-                try:
-                    number = float(part)
-                except ValueError:
-                    continue
+    def find_network_difficulty(value, in_difficulty=False):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                key_lower = str(key).lower()
+                if "difficulty" in key_lower:
+                    found = find_network_difficulty(item, True)
+                    if found:
+                        return found
+                elif in_difficulty:
+                    found = find_network_difficulty(item, True)
+                    if found:
+                        return found
+        elif isinstance(value, list):
+            for item in value:
+                found = find_network_difficulty(item, in_difficulty)
+                if found:
+                    return found
+        elif in_difficulty:
+            return normalize(value)
+        return None
 
-                if index + 1 < len(parts):
-                    unit = parts[index + 1].upper().strip(".,:;)")
-                    multiplier = units.get(unit)
-                    if multiplier:
-                        difficulty = number * multiplier
-                        if difficulty > 0:
-                            return {
-                                "difficulty": difficulty,
-                                "height": None,
-                                "algo": "rx/0",
-                                "source": "kryptex-page",
-                            }
-    except Exception:
-        pass
-
-    # API fallback only when the public coin page is unavailable.
+    # Numeric network data from the same Kryptex source used by the
+    # XTM-RX difficulty chart. Try the XTM-RX identifier first.
     endpoints = [
         "https://pool.kryptex.com/api/v1/net/stats/xtm-rx",
-        "https://pool.kryptex.com/api/v1/coin/xtm-rx/info",
+        "https://pool.kryptex.com/api/v1/net/stats/xtm",
     ]
 
     for endpoint in endpoints:
         try:
             data = fetch_json(endpoint, timeout=8)
-            if not isinstance(data, dict):
-                continue
-
-            units = {
-                "H": 1,
-                "KH": 1_000,
-                "MH": 1_000_000,
-                "GH": 1_000_000_000,
-                "TH": 1_000_000_000_000,
-                "PH": 1_000_000_000_000_000,
-            }
-
-            def find_difficulty(value):
-                if isinstance(value, dict):
-                    for key, item in value.items():
-                        if "difficulty" in str(key).lower():
-                            found = find_difficulty(item)
-                            if found:
-                                return found
-                elif isinstance(value, list):
-                    for item in value:
-                        found = find_difficulty(item)
-                        if found:
-                            return found
-                elif isinstance(value, (int, float)) and value > 0:
-                    return float(value)
-                elif isinstance(value, str):
-                    match = re.search(
-                        r"([0-9]+(?:\.[0-9]+)?)\s*(H|KH|MH|GH|TH|PH)\b",
-                        value,
-                        re.IGNORECASE,
-                    )
-                    if match:
-                        return float(match.group(1)) * units[match.group(2).upper()]
-                    try:
-                        number = float(value.replace(",", "").strip())
-                        return number if number > 0 else None
-                    except ValueError:
-                        return None
-                return None
-
-            difficulty = find_difficulty(data)
+            difficulty = find_network_difficulty(data)
             if difficulty:
                 height = data.get("height") if isinstance(data, dict) else None
                 return {
                     "difficulty": difficulty,
                     "height": height,
                     "algo": "rx/0",
-                    "source": "kryptex-xtm-rx-api",
+                    "source": "kryptex-xtm-rx",
                 }
         except Exception:
             pass
+
+    # The chart page itself remains the configured/default source. Some
+    # versions render the chart client-side, so only accept a number if
+    # it is explicitly associated with a network-difficulty data value.
+    try:
+        html = fetch_text(
+            "https://pool.kryptex.com/xtm-rx/difficulty",
+            timeout=8,
+        )
+        patterns = [
+            r'(?i)"(?:difficulty|networkDifficulty|network_difficulty)"\\s*[:=]\\s*"?([0-9]+(?:\\.[0-9]+)?)\\s*(H|KH|MH|GH|TH|PH)?',
+            r'(?i)(?:network[ _-]?difficulty)[^0-9]{0,80}([0-9]+(?:\\.[0-9]+)?)\\s*(H|KH|MH|GH|TH|PH)\\b',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, html)
+            if not match:
+                continue
+            number = float(match.group(1))
+            unit = (match.group(2) or "H").upper()
+            difficulty = number * units[unit]
+            if difficulty >= 1_000_000_000:
+                return {
+                    "difficulty": difficulty,
+                    "height": None,
+                    "algo": "rx/0",
+                    "source": "kryptex-xtm-rx",
+                }
+    except Exception:
+        pass
 
     return None
 
