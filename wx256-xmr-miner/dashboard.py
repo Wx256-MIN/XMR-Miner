@@ -194,27 +194,54 @@ def fetch_tari_network(cfg):
             if not isinstance(data, dict):
                 continue
 
-            difficulty = data.get("difficulty")
-            if isinstance(difficulty, str):
-                parts = difficulty.replace(",", " ").split()
-                if len(parts) >= 2:
-                    units = {
-                        "H": 1,
-                        "KH": 1_000,
-                        "MH": 1_000_000,
-                        "GH": 1_000_000_000,
-                        "TH": 1_000_000_000_000,
-                        "PH": 1_000_000_000_000_000,
-                    }
-                    try:
-                        difficulty = float(parts[0]) * units.get(parts[1].upper(), 1)
-                    except ValueError:
-                        difficulty = None
+            units = {
+                "H": 1,
+                "KH": 1_000,
+                "MH": 1_000_000,
+                "GH": 1_000_000_000,
+                "TH": 1_000_000_000_000,
+                "PH": 1_000_000_000_000_000,
+            }
 
-            if isinstance(difficulty, (int, float)) and difficulty > 0:
+            def find_difficulty(value):
+                if isinstance(value, dict):
+                    for key, item in value.items():
+                        if "difficulty" in str(key).lower():
+                            found = find_difficulty(item)
+                            if found:
+                                return found
+                    for item in value.values():
+                        found = find_difficulty(item)
+                        if found:
+                            return found
+                elif isinstance(value, list):
+                    for item in value:
+                        found = find_difficulty(item)
+                        if found:
+                            return found
+                elif isinstance(value, (int, float)) and value > 0:
+                    return float(value)
+                elif isinstance(value, str):
+                    match = re.search(
+                        r"([0-9]+(?:\\.[0-9]+)?)\\s*(H|KH|MH|GH|TH|PH)\\b",
+                        value,
+                        re.IGNORECASE,
+                    )
+                    if match:
+                        return float(match.group(1)) * units[match.group(2).upper()]
+                    try:
+                        number = float(value.replace(",", "").strip())
+                        return number if number > 0 else None
+                    except ValueError:
+                        return None
+                return None
+
+            difficulty = find_difficulty(data)
+            if difficulty:
+                height = data.get("height") if isinstance(data, dict) else None
                 return {
-                    "difficulty": float(difficulty),
-                    "height": data.get("height"),
+                    "difficulty": difficulty,
+                    "height": height,
                     "algo": "rx/0",
                     "source": "kryptex-xtm-rx-api",
                 }
