@@ -121,9 +121,21 @@ def start_miner():
 
 
 def fetch_json(url, timeout=5):
-    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.4.1", "Accept": "application/json"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Wx256-XMR-Miner/0.4.6", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
+
+
+def fetch_text(url, timeout=5):
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Wx256-XMR-Miner/0.4.6",
+            "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return response.read().decode("utf-8", errors="replace")
 
 
 def get_summary():
@@ -384,7 +396,7 @@ def get_stats():
         "network_height": network_height,
         "network_updated_at": network_updated_at if network else None,
         "network_live": bool(network.get("difficulty")),
-        "network_source": "kryptex-xtm-rx-api" if coin == "tari" else "xmrig-network-api",
+        "network_source": (network.get("source") or "kryptex-page") if coin == "tari" else "xmrig-network-api",
         "block_candidate": block_candidate,
     }
 
