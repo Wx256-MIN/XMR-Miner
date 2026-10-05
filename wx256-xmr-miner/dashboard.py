@@ -210,10 +210,6 @@ def fetch_tari_network(cfg):
                             found = find_difficulty(item)
                             if found:
                                 return found
-                    for item in value.values():
-                        found = find_difficulty(item)
-                        if found:
-                            return found
                 elif isinstance(value, list):
                     for item in value:
                         found = find_difficulty(item)
@@ -223,7 +219,7 @@ def fetch_tari_network(cfg):
                     return float(value)
                 elif isinstance(value, str):
                     match = re.search(
-                        r"([0-9]+(?:\\.[0-9]+)?)\\s*(H|KH|MH|GH|TH|PH)\\b",
+                        r"([0-9]+(?:\.[0-9]+)?)\s*(H|KH|MH|GH|TH|PH)\b",
                         value,
                         re.IGNORECASE,
                     )
@@ -388,7 +384,7 @@ def get_stats():
         "network_height": network_height,
         "network_updated_at": network_updated_at if network else None,
         "network_live": bool(network.get("difficulty")),
-        "network_source": "kryptex-api" if coin == "tari" else "xmrig-network-api",
+        "network_source": "kryptex-xtm-rx-api" if coin == "tari" else "xmrig-network-api",
         "block_candidate": block_candidate,
     }
 
