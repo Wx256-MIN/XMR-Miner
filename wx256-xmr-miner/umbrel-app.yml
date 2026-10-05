@@ -4,7 +4,7 @@ name: CPU RandomX Miner
 tagline: Monero XMR and Tari XTM CPU mining with XMRig
 icon: https://raw.githubusercontent.com/Wx256-MIN/XMR-Miner/main/wx256-xmr-miner/dashboard/favicon.svg
 category: finance
-version: "0.4.7"
+version: "0.4.8"
 port: 8099
 description: >-
   CPU RandomX miner for UmbrelOS powered by XMRig, with support for
@@ -17,6 +17,6 @@ repo: https://github.com/Wx256-MIN/XMR-Miner
 support: https://github.com/Wx256-MIN/XMR-Miner/issues
 gallery: []
 releaseNotes: >-
-  Fix Kryptex XTM-RX network difficulty API parsing and nested response handling.
+  Fix Tari network difficulty using Kryptex XTM-RX API with a server-rendered About XTM fallback.
 dependencies: []
 path: ""
