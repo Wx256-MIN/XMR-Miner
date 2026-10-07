@@ -50,6 +50,9 @@ DEFAULT_COIN = "xmr"
 
 miner_lock = threading.Lock()
 miner_process = None
+miner_log_lock = threading.Lock()
+miner_logs = []
+MAX_MINER_LOG_LINES = 400
 network_cache = {"ts": 0.0, "data": {}}
 network_lock = threading.Lock()
 
@@ -79,6 +82,38 @@ def get_coin_config(cfg=None):
 
 def miner_running():
     return miner_process is not None and miner_process.poll() is None
+
+
+def append_miner_log(line):
+    line = str(line).rstrip("\r\n")
+    if not line:
+        return
+    timestamp = time.strftime("%H:%M:%S")
+    with miner_log_lock:
+        miner_logs.append(f"[{timestamp}] {line}")
+        if len(miner_logs) > MAX_MINER_LOG_LINES:
+            del miner_logs[:-MAX_MINER_LOG_LINES]
+
+
+def read_miner_output(process):
+    try:
+        if process.stdout is None:
+            return
+        for line in iter(process.stdout.readline, ""):
+            append_miner_log(line)
+    except Exception as exc:
+        append_miner_log("Log reader error: " + str(exc))
+    finally:
+        try:
+            if process.stdout:
+                process.stdout.close()
+        except Exception:
+            pass
+
+
+def get_miner_logs():
+    with miner_log_lock:
+        return list(miner_logs)
 
 
 def stop_miner():
@@ -123,8 +158,27 @@ def start_miner():
     if threads > 0:
         args.append("--threads=" + str(threads))
 
-    with miner_lock:
-        miner_process = subprocess.Popen(args, cwd="/data")
+    append_miner_log("Starting XMRig: " + " ".join(args))
+    try:
+        with miner_lock:
+            miner_process = subprocess.Popen(
+                args,
+                cwd="/data",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+            )
+        threading.Thread(
+            target=read_miner_output,
+            args=(miner_process,),
+            daemon=True,
+        ).start()
+    except Exception as exc:
+        append_miner_log("Failed to start XMRig: " + str(exc))
+        miner_process = None
+        return False, "Failed to start XMRig: " + str(exc)
 
     return True, "Mining started"
 
@@ -582,6 +636,16 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(200, get_stats())
             return
 
+        if self.path == "/api/logs":
+            self.json_response(
+                200,
+                {
+                    "logs": get_miner_logs(),
+                    "running": miner_running(),
+                },
+            )
+            return
+
         if self.path.startswith("/2/") or self.path.startswith("/1/"):
             try:
                 with urllib.request.urlopen(API + self.path, timeout=5) as r:
@@ -600,6 +664,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/stop":
             stop_miner()
+            append_miner_log("Miner stopped by dashboard.")
             self.json_response(200, {"ok": True, "message": "Mining stopped"})
             return
 
