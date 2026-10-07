@@ -7,11 +7,20 @@ services:
       PROXY_AUTH_WHITELIST: "/api/*"
 
   xmr-miner:
-    image: ghcr.io/wx256-min/xmr-miner:0.4.11
+    image: ghcr.io/wx256-min/xmr-miner:0.4.12
     restart: on-failure
     init: true
     volumes:
       - ${APP_DATA_DIR}/data:/data
+    devices:
+      - /dev/cpu/0/msr:/dev/cpu/0/msr
+      - /dev/cpu/1/msr:/dev/cpu/1/msr
+      - /dev/cpu/2/msr:/dev/cpu/2/msr
+      - /dev/cpu/3/msr:/dev/cpu/3/msr
+      - /dev/cpu/4/msr:/dev/cpu/4/msr
+      - /dev/cpu/5/msr:/dev/cpu/5/msr
+      - /dev/cpu/6/msr:/dev/cpu/6/msr
+      - /dev/cpu/7/msr:/dev/cpu/7/msr
     expose:
       - "80"
     stop_grace_period: 30s
