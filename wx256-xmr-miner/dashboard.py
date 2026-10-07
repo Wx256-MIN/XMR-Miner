@@ -89,10 +89,9 @@ def append_miner_log(line):
     line = str(line).rstrip("\r\n")
     # XMRig normally emits ANSI color/control sequences. They are useful in
     # a terminal but become visible garbage in the web dashboard.
-    line = re.sub(r"\\x1b(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\x07]*(?:\\x07|\\x1b\\\\))", "", line)
+    line = re.sub(r"\x1b(?:[@-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\\\))", "", line)
     line = line.replace("\x1b", "")
-    line = re.sub(r"\\x1b?\\[[0-9;?]*[ -/]*[@-~]", "", line)
-    line = "".join(ch for ch in line if ch in "\\t" or ord(ch) >= 32)
+    line = "".join(ch for ch in line if ch == "\t" or ord(ch) >= 32)
     if not line:
         return
     timestamp = time.strftime("%H:%M:%S")
