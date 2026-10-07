@@ -5,6 +5,7 @@ import subprocess
 import threading
 import time
 import urllib.request
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 API = "http://127.0.0.1:8080"
@@ -86,6 +87,12 @@ def miner_running():
 
 def append_miner_log(line):
     line = str(line).rstrip("\r\n")
+    # XMRig normally emits ANSI color/control sequences. They are useful in
+    # a terminal but become visible garbage in the web dashboard.
+    line = re.sub(r"\\x1b(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\x07]*(?:\\x07|\\x1b\\\\))", "", line)
+    line = line.replace("\x1b", "")
+    line = re.sub(r"\\x1b?\\[[0-9;?]*[ -/]*[@-~]", "", line)
+    line = "".join(ch for ch in line if ch in "\\t" or ord(ch) >= 32)
     if not line:
         return
     timestamp = time.strftime("%H:%M:%S")
@@ -149,6 +156,7 @@ def start_miner():
         "--http-host=127.0.0.1",
         "--http-port=8080",
         "--print-time=60",
+        "--no-color",
     ]
 
     if coin_cfg["coin_arg"]:
