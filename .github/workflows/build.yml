@@ -39,5 +39,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'push' }}
           tags: |
-            ghcr.io/wx256-min/xmr-miner:0.4.13
+            ghcr.io/wx256-min/xmr-miner:0.4.15
             ghcr.io/wx256-min/xmr-miner:latest
