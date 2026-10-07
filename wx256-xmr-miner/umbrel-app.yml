@@ -4,7 +4,7 @@ name: CPU RandomX Miner
 tagline: Monero XMR, Tari XTM and Zephyr ZEPH CPU mining with XMRig
 icon: https://raw.githubusercontent.com/Wx256-MIN/XMR-Miner/main/wx256-xmr-miner/dashboard/favicon.svg
 category: finance
-version: "0.4.10"
+version: "0.4.11"
 port: 8099
 description: >-
   CPU RandomX miner for UmbrelOS powered by XMRig, with support for
@@ -17,6 +17,6 @@ repo: https://github.com/Wx256-MIN/XMR-Miner
 support: https://github.com/Wx256-MIN/XMR-Miner/issues
 gallery: []
 releaseNotes: >-
-  Add Zephyr ZEPH mining with Kryptex ZEPH network difficulty support and live Miner Logs.
+  Add Zephyr ZEPH mining with Kryptex ZEPH network difficulty support, live Miner Logs, and clean XMRig log output.
 dependencies: []
 path: ""
