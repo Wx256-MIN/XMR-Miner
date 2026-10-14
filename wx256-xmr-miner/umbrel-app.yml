@@ -1,10 +1,10 @@
 manifestVersion: 1
 id: wx256-xmr-miner
-name: CPU Coin Miner
-tagline: RandomX and Scrypt CPU mining for XMR, XTM, ZEPH, LTC and DOGE
+name: RandomX CPU Miner
+tagline: XMRig CPU mining for Monero, Tari and Zephyr
 icon: https://raw.githubusercontent.com/Wx256-MIN/XMR-Miner/main/wx256-xmr-miner/dashboard/favicon.svg
 category: finance
-version: "0.4.17"
+version: "0.4.18"
 port: 8099
 description: >-
   CPU RandomX miner for UmbrelOS powered by XMRig, with support for
@@ -17,6 +17,6 @@ repo: https://github.com/Wx256-MIN/XMR-Miner
 support: https://github.com/Wx256-MIN/XMR-Miner/issues
 gallery: []
 releaseNotes: >-
-  Show CPUMiner-opt TTF hashrate immediately while retaining periodic measured-rate updates.
+  Remove Scrypt and focus on XMRig RandomX mining, monitoring and stability.
 dependencies: []
 path: ""
