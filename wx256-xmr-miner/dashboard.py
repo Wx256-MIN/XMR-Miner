@@ -126,11 +126,21 @@ def update_scrypt_stats(line):
         if rejected:
             scrypt_stats["rejected"] = int(rejected.group(1))
 
+        # CPUMiner-opt emits a reference-rate estimate in its early "TTF @"
+        # work lines, then emits measured/effective rates in the periodic
+        # "Hash rate" summary. Parse both so the dashboard has a rate before
+        # the first five-minute summary arrives.
         rate = re.search(
-            r"Hash\s+rate\s+([0-9]+(?:\.[0-9]+)?)\s*([kMGT]?)h/s",
+            r"Hash\s+rate\s+([0-9]+(?:\.[0-9]+)?)\s*([kMGT]?)\s*h/s",
             line,
             re.IGNORECASE,
         )
+        if not rate:
+            rate = re.search(
+                r"\bTTF\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*([kMGT]?)\s*h/s",
+                line,
+                re.IGNORECASE,
+            )
         if rate:
             scale = {"": 1, "K": 1_000, "M": 1_000_000, "G": 1_000_000_000, "T": 1_000_000_000_000}
             scrypt_stats["hashrate"] = float(rate.group(1)) * scale.get(rate.group(2).upper(), 1)
