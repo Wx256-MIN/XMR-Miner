@@ -16,7 +16,6 @@ NETWORK_REFRESH_SECONDS = 10
 ROOT = "/dashboard"
 CONFIG = "/data/config.json"
 MINER = "/opt/xmrig"
-CPUMINER = "/opt/cpuminer"
 
 COINS = {
     "xmr": {
@@ -46,15 +45,6 @@ COINS = {
         "wallet_label": "Zephyr wallet address",
         "wallet_placeholder": "ZEPH wallet address",
     },
-    "ltcdoge": {
-        "name": "Litecoin + Dogecoin",
-        "symbol": "LTC + DOGE",
-        "algorithm": "scrypt",
-        "algorithm_name": "Scrypt (merged mining)",
-        "coin_arg": None,
-        "wallet_label": "Pool username / wallet",
-        "wallet_placeholder": "Pool username or wallet address",
-    },
 }
 
 DEFAULT_COIN = "xmr"
@@ -65,8 +55,6 @@ miner_engine = "xmrig"
 miner_log_lock = threading.Lock()
 miner_logs = []
 MAX_MINER_LOG_LINES = 400
-scrypt_stats_lock = threading.Lock()
-scrypt_stats = {"hashrate": None, "accepted": 0, "rejected": 0, "started_at": None}
 network_cache = {"ts": 0.0, "data": {}}
 network_lock = threading.Lock()
 
@@ -95,55 +83,12 @@ def get_coin_config(cfg=None):
 
 
 def get_engine_config(cfg=None):
-    cfg = cfg or load_config()
-    engine = str(cfg.get("engine", "xmrig")).strip().lower()
-    return engine if engine in ("xmrig", "cpuminer-opt") else "xmrig"
+    # XMRig is the only supported engine; legacy engine values are ignored.
+    return "xmrig"
 
 
 def miner_running():
     return miner_process is not None and miner_process.poll() is None
-
-
-def update_scrypt_stats(line):
-    """Parse CPUMiner-opt share and periodic summaries for dashboard metrics."""
-    line = re.sub(r"^\[[^\]]+\]\s*", "", str(line).strip())
-    with scrypt_stats_lock:
-        # Share result format: "5 Accepted 5 S0 R0 B0, 400.092 sec (159ms)".
-        share = re.search(
-            r"^\d+\s+(?:Accepted|Rejected|Stale)\s+(\d+)\s+S(\d+)\s+R(\d+)\s+B\d+",
-            line,
-            re.IGNORECASE,
-        )
-        if share:
-            scrypt_stats["accepted"] = int(share.group(1))
-            scrypt_stats["rejected"] = int(share.group(3))
-
-        # Periodic session summary lines: "Accepted 37 144 25.1%".
-        accepted = re.search(r"^Accepted\s+\d+\s+(\d+)\s+[0-9.]+%", line, re.IGNORECASE)
-        if accepted:
-            scrypt_stats["accepted"] = int(accepted.group(1))
-        rejected = re.search(r"^Rejected\s+\d+\s+(\d+)\s+[0-9.]+%", line, re.IGNORECASE)
-        if rejected:
-            scrypt_stats["rejected"] = int(rejected.group(1))
-
-        # CPUMiner-opt emits a reference-rate estimate in its early "TTF @"
-        # work lines, then emits measured/effective rates in the periodic
-        # "Hash rate" summary. Parse both so the dashboard has a rate before
-        # the first five-minute summary arrives.
-        rate = re.search(
-            r"Hash\s+rate\s+([0-9]+(?:\.[0-9]+)?)\s*([kMGT]?)\s*h/s",
-            line,
-            re.IGNORECASE,
-        )
-        if not rate:
-            rate = re.search(
-                r"\bTTF\s*@\s*([0-9]+(?:\.[0-9]+)?)\s*([kMGT]?)\s*h/s",
-                line,
-                re.IGNORECASE,
-            )
-        if rate:
-            scale = {"": 1, "K": 1_000, "M": 1_000_000, "G": 1_000_000_000, "T": 1_000_000_000_000}
-            scrypt_stats["hashrate"] = float(rate.group(1)) * scale.get(rate.group(2).upper(), 1)
 
 
 def append_miner_log(line):
@@ -154,8 +99,6 @@ def append_miner_log(line):
     line = "".join(ch for ch in line if ch == "\t" or ord(ch) >= 32)
     if not line:
         return
-    if miner_engine == "cpuminer-opt":
-        update_scrypt_stats(line)
     timestamp = time.strftime("%H:%M:%S")
     with miner_log_lock:
         miner_logs.append(f"[{timestamp}] {line}")
@@ -201,92 +144,54 @@ def start_miner():
     global miner_process, miner_engine
     cfg = load_config()
     if not cfg.get("pool") or not cfg.get("wallet"):
-        return False, "Pool URL and wallet/username are required"
+        return False, "Pool URL and wallet address are required"
 
-    engine = get_engine_config(cfg)
     coin = get_coin_config(cfg)
+    coin_cfg = COINS[coin]
     stop_miner()
     with miner_log_lock:
         miner_logs.clear()
-    threads = int(cfg.get("threads", 0))
 
-    if engine == "cpuminer-opt":
-        if coin != "ltcdoge":
-            return False, "CPUMiner-opt currently supports the Litecoin + Dogecoin Scrypt option only"
+    try:
+        threads = int(cfg.get("threads", 0))
+        donate = int(cfg.get("donate_level", 1))
+    except (TypeError, ValueError):
+        return False, "CPU threads and donation level must be valid numbers"
+    if threads < 0 or threads > 1024:
+        return False, "CPU threads must be between 0 and 1024"
+    if donate < 0 or donate > 100:
+        return False, "Donation level must be between 0 and 100"
 
-        pool_url = str(cfg["pool"]).strip()
-        if not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", pool_url):
-            pool_url = "stratum+tcp://" + pool_url
+    args = [
+        MINER,
+        "--url=" + str(cfg["pool"]).strip(),
+        "--algo=" + coin_cfg["algorithm"],
+        "--user=" + str(cfg["wallet"]).strip(),
+        "--pass=" + str(cfg.get("worker", "umbrel") or "umbrel"),
+        "--donate-level=" + str(donate),
+        "--http-host=127.0.0.1",
+        "--http-port=8080",
+        "--print-time=60",
+        "--no-color",
+    ]
+    if coin_cfg["coin_arg"]:
+        args.insert(3, "--coin=" + coin_cfg["coin_arg"])
+    if threads > 0:
+        args.append("--threads=" + str(threads))
 
-        username = str(cfg["wallet"]).strip()
-        worker = str(cfg.get("worker", "umbrel")).strip()
-        # Most Scrypt pools accept account.worker or wallet.worker. If the
-        # user already supplied a suffix, do not append another one.
-        if worker and "." not in username:
-            username += "." + worker
-        password = str(cfg.get("pool_password", "1") or "1")
-
-        args = [
-            CPUMINER,
-            "--algo=scrypt",
-            "--url=" + pool_url,
-            "--user=" + username,
-            "--pass=" + password,
-            "--no-color",
-        ]
-        if threads > 0:
-            args.append("--threads=" + str(threads))
-
-        miner_engine = "cpuminer-opt"
-        with scrypt_stats_lock:
-            scrypt_stats.update({
-                "hashrate": None,
-                "accepted": 0,
-                "rejected": 0,
-                "started_at": time.time(),
-            })
-        append_miner_log("Starting CPUMiner-opt (Scrypt) with pool " + pool_url +
-                         " and " + (str(threads) if threads > 0 else "automatic") + " CPU threads.")
-    else:
-        coin_cfg = COINS[coin]
-        args = [
-            MINER,
-            "--url=" + cfg["pool"],
-            "--algo=" + coin_cfg["algorithm"],
-            "--user=" + cfg["wallet"],
-            "--pass=" + cfg.get("worker", "umbrel"),
-            "--donate-level=" + str(cfg.get("donate_level", 1)),
-            "--http-host=127.0.0.1",
-            "--http-port=8080",
-            "--print-time=60",
-            "--no-color",
-        ]
-        if coin_cfg["coin_arg"]:
-            args.insert(3, "--coin=" + coin_cfg["coin_arg"])
-        if threads > 0:
-            args.append("--threads=" + str(threads))
-
-        miner_engine = "xmrig"
-        append_miner_log("Starting XMRig: " + " ".join(args))
-
+    miner_engine = "xmrig"
+    append_miner_log("Starting XMRig for " + coin_cfg["name"] + " using " +
+                     (str(threads) if threads > 0 else "automatic") + " CPU threads.")
     try:
         with miner_lock:
             miner_process = subprocess.Popen(
-                args,
-                cwd="/data",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
+                args, cwd="/data", stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, bufsize=1,
                 universal_newlines=True,
             )
-        threading.Thread(
-            target=read_miner_output,
-            args=(miner_process,),
-            daemon=True,
-        ).start()
+        threading.Thread(target=read_miner_output, args=(miner_process,), daemon=True).start()
     except Exception as exc:
-        append_miner_log("Failed to start " + ("CPUMiner-opt" if engine == "cpuminer-opt" else "XMRig") + ": " + str(exc))
+        append_miner_log("Failed to start XMRig: " + str(exc))
         miner_process = None
         return False, "Failed to start miner: " + str(exc)
 
@@ -554,8 +459,6 @@ def fetch_zeph_network(cfg):
 
 def fetch_network():
     cfg = load_config()
-    if get_engine_config(cfg) == "cpuminer-opt" or get_coin_config(cfg) == "ltcdoge":
-        return None
     if get_coin_config(cfg) == "tari":
         return fetch_tari_network(cfg)
     if get_coin_config(cfg) == "zeph":
@@ -614,8 +517,6 @@ def network_refresh_loop():
 
 def get_network():
     cfg = load_config()
-    if get_engine_config(cfg) == "cpuminer-opt" or get_coin_config(cfg) == "ltcdoge":
-        return {}
     with network_lock:
         cached = network_cache["data"]
         age = time.time() - network_cache["ts"]
@@ -635,33 +536,6 @@ def get_stats():
     coin_cfg = COINS[coin]
     engine = get_engine_config(cfg)
 
-    if engine == "cpuminer-opt":
-        with scrypt_stats_lock:
-            scrypt = dict(scrypt_stats)
-        started_at = scrypt.get("started_at")
-        uptime = max(0, int(time.time() - started_at)) if started_at and miner_running() else 0
-        return {
-            "running": miner_running(),
-            "engine": engine,
-            "coin": "ltcdoge",
-            "coin_name": COINS["ltcdoge"]["name"],
-            "symbol": COINS["ltcdoge"]["symbol"],
-            "hashrate": scrypt.get("hashrate"),
-            "accepted": scrypt.get("accepted", 0),
-            "rejected": scrypt.get("rejected", 0),
-            "uptime": uptime,
-            "worker": cfg.get("worker", "umbrel"),
-            "pool": cfg.get("pool"),
-            "pool_diff": None,
-            "best_diff": None,
-            "network_difficulty": None,
-            "network_algorithm": "Scrypt",
-            "network_height": None,
-            "network_updated_at": None,
-            "network_live": False,
-            "network_source": "unavailable",
-            "block_candidate": False,
-        }
 
     summary = get_summary()
     network = get_network()
@@ -764,9 +638,7 @@ class Handler(BaseHTTPRequestHandler):
             public = cfg.copy()
             if public.get("wallet"):
                 public["wallet"] = public["wallet"][:8] + "…" + public["wallet"][-6:]
-            if "pool_password" in public:
-                public["pool_password"] = ""
-            public["engine"] = get_engine_config(cfg)
+            public["engine"] = "xmrig"
             coin = get_coin_config(cfg)
             public["coin"] = coin
             self.json_response(
@@ -776,10 +648,6 @@ class Handler(BaseHTTPRequestHandler):
                     "config": public,
                     "coin": COINS[coin],
                     "coins": COINS,
-                    "engines": {
-                        "xmrig": {"name": "XMRig", "algorithm": "RandomX"},
-                        "cpuminer-opt": {"name": "CPUMiner-opt", "algorithm": "Scrypt"},
-                    },
                     "running": miner_running(),
                 },
             )
@@ -834,24 +702,13 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length))
 
-            engine = str(body.get("engine", "xmrig")).strip().lower()
-            if engine not in ("xmrig", "cpuminer-opt"):
-                raise ValueError("Unsupported mining engine")
-
             coin = str(body.get("coin", DEFAULT_COIN)).strip().lower()
-            if engine == "cpuminer-opt":
-                coin = "ltcdoge"
-            elif coin == "ltcdoge":
-                raise ValueError("Litecoin + Dogecoin requires the CPUMiner-opt Scrypt engine")
             if coin not in COINS:
                 raise ValueError("Unsupported coin")
 
             pool = str(body.get("pool", "")).strip()
             wallet = str(body.get("wallet", "")).strip()
             worker = str(body.get("worker", "umbrel")).strip() or "umbrel"
-            pool_password = str(body.get("pool_password", "")).strip()
-            if not pool_password:
-                pool_password = load_config().get("pool_password", "1") or "1"
             threads = int(body.get("threads", 0))
             donate = int(body.get("donate_level", 1))
 
@@ -866,14 +723,12 @@ class Handler(BaseHTTPRequestHandler):
 
             save_config(
                 {
-                    "engine": engine,
                     "coin": coin,
                     "pool": pool,
                     "wallet": wallet,
                     "worker": worker,
                     "threads": threads,
                     "donate_level": donate,
-                    "pool_password": pool_password,
                 }
             )
             with network_lock:
