@@ -638,6 +638,7 @@ class Handler(BaseHTTPRequestHandler):
             public = cfg.copy()
             if public.get("wallet"):
                 public["wallet"] = public["wallet"][:8] + "…" + public["wallet"][-6:]
+            public.pop("pool_password", None)
             public["engine"] = "xmrig"
             coin = get_coin_config(cfg)
             public["coin"] = coin
