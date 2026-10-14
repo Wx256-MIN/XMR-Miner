@@ -542,6 +542,8 @@ def fetch_zeph_network(cfg):
 
 def fetch_network():
     cfg = load_config()
+    if get_engine_config(cfg) == "cpuminer-opt" or get_coin_config(cfg) == "ltcdoge":
+        return None
     if get_coin_config(cfg) == "tari":
         return fetch_tari_network(cfg)
     if get_coin_config(cfg) == "zeph":
@@ -599,6 +601,9 @@ def network_refresh_loop():
 
 
 def get_network():
+    cfg = load_config()
+    if get_engine_config(cfg) == "cpuminer-opt" or get_coin_config(cfg) == "ltcdoge":
+        return {}
     with network_lock:
         cached = network_cache["data"]
         age = time.time() - network_cache["ts"]
@@ -616,6 +621,36 @@ def get_stats():
     cfg = load_config()
     coin = get_coin_config(cfg)
     coin_cfg = COINS[coin]
+    engine = get_engine_config(cfg)
+
+    if engine == "cpuminer-opt":
+        with scrypt_stats_lock:
+            scrypt = dict(scrypt_stats)
+        started_at = scrypt.get("started_at")
+        uptime = max(0, int(time.time() - started_at)) if started_at and miner_running() else 0
+        return {
+            "running": miner_running(),
+            "engine": engine,
+            "coin": "ltcdoge",
+            "coin_name": COINS["ltcdoge"]["name"],
+            "symbol": COINS["ltcdoge"]["symbol"],
+            "hashrate": scrypt.get("hashrate"),
+            "accepted": scrypt.get("accepted", 0),
+            "rejected": scrypt.get("rejected", 0),
+            "uptime": uptime,
+            "worker": cfg.get("worker", "umbrel"),
+            "pool": cfg.get("pool"),
+            "pool_diff": None,
+            "best_diff": None,
+            "network_difficulty": None,
+            "network_algorithm": "Scrypt",
+            "network_height": None,
+            "network_updated_at": None,
+            "network_live": False,
+            "network_source": "unavailable",
+            "block_candidate": False,
+        }
+
     summary = get_summary()
     network = get_network()
 
@@ -664,6 +699,7 @@ def get_stats():
 
     return {
         "running": miner_running(),
+        "engine": engine,
         "coin": coin,
         "coin_name": coin_cfg["name"],
         "symbol": coin_cfg["symbol"],
@@ -716,6 +752,9 @@ class Handler(BaseHTTPRequestHandler):
             public = cfg.copy()
             if public.get("wallet"):
                 public["wallet"] = public["wallet"][:8] + "…" + public["wallet"][-6:]
+            if "pool_password" in public:
+                public["pool_password"] = ""
+            public["engine"] = get_engine_config(cfg)
             coin = get_coin_config(cfg)
             public["coin"] = coin
             self.json_response(
@@ -725,6 +764,10 @@ class Handler(BaseHTTPRequestHandler):
                     "config": public,
                     "coin": COINS[coin],
                     "coins": COINS,
+                    "engines": {
+                        "xmrig": {"name": "XMRig", "algorithm": "RandomX"},
+                        "cpuminer-opt": {"name": "CPUMiner-opt", "algorithm": "Scrypt"},
+                    },
                     "running": miner_running(),
                 },
             )
@@ -779,17 +822,29 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length))
 
+            engine = str(body.get("engine", "xmrig")).strip().lower()
+            if engine not in ("xmrig", "cpuminer-opt"):
+                raise ValueError("Unsupported mining engine")
+
             coin = str(body.get("coin", DEFAULT_COIN)).strip().lower()
+            if engine == "cpuminer-opt":
+                coin = "ltcdoge"
+            elif coin == "ltcdoge":
+                raise ValueError("Litecoin + Dogecoin requires the CPUMiner-opt Scrypt engine")
             if coin not in COINS:
                 raise ValueError("Unsupported coin")
+
             pool = str(body.get("pool", "")).strip()
             wallet = str(body.get("wallet", "")).strip()
             worker = str(body.get("worker", "umbrel")).strip() or "umbrel"
+            pool_password = str(body.get("pool_password", "")).strip()
+            if not pool_password:
+                pool_password = load_config().get("pool_password", "1") or "1"
             threads = int(body.get("threads", 0))
             donate = int(body.get("donate_level", 1))
 
             if not pool or not wallet:
-                raise ValueError("Pool URL and wallet address are required")
+                raise ValueError("Pool URL and wallet/username are required")
             if threads < 0 or donate < 0:
                 raise ValueError("Threads and donation level cannot be negative")
             if threads > 1024:
@@ -799,20 +854,25 @@ class Handler(BaseHTTPRequestHandler):
 
             save_config(
                 {
+                    "engine": engine,
                     "coin": coin,
                     "pool": pool,
                     "wallet": wallet,
                     "worker": worker,
                     "threads": threads,
                     "donate_level": donate,
+                    "pool_password": pool_password,
                 }
             )
+            with network_lock:
+                network_cache["ts"] = 0.0
+                network_cache["data"] = {}
 
             try:
                 ok, msg = start_miner()
                 self.json_response(200 if ok else 500, {"ok": ok, "message": msg})
             except Exception as e:
-                self.json_response(500, {"ok": False, "message": "Failed to start XMRig: " + str(e)})
+                self.json_response(500, {"ok": False, "message": "Failed to start miner: " + str(e)})
         except (ValueError, TypeError, json.JSONDecodeError) as e:
             self.json_response(400, {"ok": False, "message": str(e)})
 
