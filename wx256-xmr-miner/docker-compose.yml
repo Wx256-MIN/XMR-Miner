@@ -7,7 +7,7 @@ services:
       PROXY_AUTH_WHITELIST: "/api/*"
 
   xmr-miner:
-    image: ghcr.io/wx256-min/xmr-miner:0.4.17
+    image: ghcr.io/wx256-min/xmr-miner:0.4.18
     restart: on-failure
     init: true
     cap_add:
