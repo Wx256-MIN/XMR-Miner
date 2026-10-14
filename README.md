@@ -1,55 +1,49 @@
-# XMR Miner for UmbrelOS
+# CPU Coin Miner for UmbrelOS
 
-A Monero (XMR) CPU miner for UmbrelOS powered by XMRig.
+An UmbrelOS mining dashboard with two selectable CPU mining engines:
+
+- **XMRig 6.26.0** for Monero (XMR), Tari (XTM), and Zephyr (ZEPH) RandomX-family mining.
+- **CPUMiner-opt 26.1** for Scrypt mining through compatible Litecoin/Dogecoin pools, including merged-mining pools that pay both coins.
 
 ## Features
-- XMRig 6.26.0
-- Monero RandomX CPU mining
-- AMD64 and ARM64 builds
-- Pool, wallet, worker and CPU-thread configuration
-- XMRig HTTP API on port 8080
-- Docker healthcheck and graceful shutdown
-- Persistent `/data` volume
-- Docker Compose support for testing outside Umbrel
 
-XMRig 6.26.0 is the current upstream release and includes RandomX v2 support and ARM64 fixes. citeturn0search0turn0search3
+- Choose XMRig (RandomX) or CPUMiner-opt (Scrypt) from the dashboard.
+- Configure pool, wallet/account username, worker name, password (Scrypt), and CPU thread count.
+- View miner logs, hashrate, accepted/rejected shares, and uptime.
+- Persistent `/data` configuration.
+- AMD64 and ARM64 Docker builds, subject to upstream CPUMiner-opt support/performance on each architecture.
+- MSR access for RandomX optimization on supported Linux hosts.
 
-## Configuration
-Copy `.env.example` to `.env` when testing with Docker Compose:
+## Litecoin + Dogecoin (Scrypt)
 
-    cp .env.example .env
+In the dashboard choose **CPUMiner-opt — Scrypt (Litecoin + Dogecoin)**. Supply a Scrypt pool endpoint and the account username or wallet format required by that pool. The worker name is appended to the username when it has no dot already; the pool password defaults to `1` if one has not been saved.
 
-Set `XMR_POOL`, `XMR_WALLET`, `XMR_WORKER`, `XMR_THREADS` and `XMR_DONATE_LEVEL`.
+For example, LitecoinPool documents this Stratum endpoint:
 
-**Never put a seed phrase or private key in this repository.**
+```text
+stratum+tcp://eu.litecoinpool.org:3333
+```
 
-## Docker test
-    docker compose up -d --build
-    docker compose logs -f xmr-miner
+Use that example only with a LitecoinPool account; enter your account username, choose a worker name, and use the password required by your pool. LitecoinPool says it automatically merged-mines Litecoin and Dogecoin and pays DOGE separately. Other pools may have different payout rules, so confirm that your pool actually supports LTC/DOGE merged mining before configuring it.
 
-The miner API is available at `http://YOUR_UMBREL_IP:8080/2/summary`. Stop it with:
+**CPU Scrypt mining is not competitive with dedicated Scrypt ASICs and is unlikely to be profitable on a desktop CPU.** Use the Scrypt engine for compatibility/testing, not as a profitability guarantee.
 
-    docker compose down
+## RandomX coins
 
-## UmbrelOS
-Umbrel Community App Stores use an app directory containing `umbrel-app.yml` and `docker-compose.yml`; this repository follows that application structure. citeturn0search4
+Choose **XMRig — RandomX** to use the existing Monero, Tari, or Zephyr options. These remain handled by XMRig; choosing CPUMiner-opt switches to the separate Scrypt engine.
 
-This repository is the **application repository**, not a complete Community App Store. A Community App Store repository also needs an `umbrel-app-store.yml` and an app directory matching the store's app ID. citeturn0search4
+## Configuration and security
 
-## ARM64 build
-The current upstream XMRig release exposes a Linux static x64 archive but no Linux static ARM64 archive. This project therefore builds XMRig from source in Docker for the target architecture instead of referencing a nonexistent ARM64 release asset. citeturn0search0
+Configuration is saved locally under the app's persistent `/data` directory. Never put a seed phrase or private key in this repository. A mining wallet/account address or pool username is sufficient.
 
-XMRig's Ubuntu build documentation lists Git/build tools, CMake, libuv, OpenSSL and hwloc dependencies; those are installed in the builder image. citeturn2search0turn2search3
+The app grants the miner access to host MSR device files and uses the `SYS_RAWIO` capability plus an unconfined AppArmor profile for MSR optimization. Run it only on hardware you own or are authorized to administer. Do not expose the miner's local API to the public internet.
 
-## Mining performance
-Monero uses RandomX and is CPU-oriented. Actual performance depends on CPU architecture, RAM, memory configuration, huge pages, thermals, pool fees, network conditions and electricity cost.
+## Build
 
-This project does **not** guarantee profitability.
+The Docker build compiles XMRig and CPUMiner-opt from pinned upstream releases. The image build includes a Python syntax check for the dashboard backend. GitHub Actions publishes the application image for `linux/amd64` and `linux/arm64`.
 
-## Security
-The miner needs a wallet address for payouts but does not need your seed phrase or private key.
-
-Do not expose the XMRig HTTP API to the public internet. Keep port 8080 on your trusted LAN/Umbrel network.
+See [Third-party notices](wx256-xmr-miner/THIRD_PARTY_NOTICES.md) for bundled miner projects and their licenses.
 
 ## License
-MIT
+
+This repository's dashboard and integration code is provided under the license in [LICENSE](LICENSE). XMRig and CPUMiner-opt remain subject to their respective upstream licenses; see the third-party notices.
