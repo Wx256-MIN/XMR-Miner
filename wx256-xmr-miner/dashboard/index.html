@@ -11,7 +11,7 @@ main{max-width:1050px;margin:auto;padding:28px}
 <body><main>
 <div class="top"><div class="brand"><img class="logo" src="/favicon.svg"><div><h1 style="margin:0">CPU RandomX Miner</h1><div id="coinSubtitle" class="muted">Monero CPU mining • RandomX • XMRig</div></div></div><div id="status" class="badge">Checking…</div></div>
 
-<section id="setup" class="card hidden"><h2 style="margin-top:0">Miner setup</h2><p class="muted">Choose a RandomX coin, then enter its pool and wallet. Configuration is saved locally on your Umbrel.</p><label>Coin</label><select id="coin" onchange="updateCoinLabels()" style="width:100%;box-sizing:border-box;padding:11px 12px;margin:6px 0 12px;border-radius:9px;border:1px solid #303745;background:#0f131b;color:#fff"><option value="xmr">Monero (XMR) — RandomX</option><option value="tari">Tari (XTM) — RandomXT</option><option value="zeph">Zephyr (ZEPH) — RandomX</option></select><label>Pool URL</label><input id="pool" placeholder="pool.example.com:3333"><label id="walletLabel">Monero wallet address</label><input id="wallet" placeholder="4... or 8..."><label>Worker name</label><input id="worker" value="umbrel"><label>CPU threads <span class="muted">(0 = automatic)</span></label><input id="threads" type="number" min="0" value="0"><label>Donation level %</label><input id="donate" type="number" min="0" value="1"><button onclick="save()">Save & Start Mining</button><p id="message"></p></section>
+<section id="setup" class="card hidden"><h2 style="margin-top:0">Miner setup</h2><p class="muted">Choose a mining engine and target. For LTC/DOGE, use a Scrypt pool that pays both coins if you want merged-mining payouts. Configuration is saved locally on your Umbrel.</p><label>Mining engine</label><select id="engine" onchange="updateEngineLabels()" style="width:100%;box-sizing:border-box;padding:11px 12px;margin:6px 0 12px;border-radius:9px;border:1px solid #303745;background:#0f131b;color:#fff"><option value="xmrig">XMRig — RandomX (XMR / XTM / ZEPH)</option><option value="cpuminer-opt">CPUMiner-opt — Scrypt (Litecoin + Dogecoin)</option></select><label>Coin / payout target</label><select id="coin" onchange="updateCoinLabels()" style="width:100%;box-sizing:border-box;padding:11px 12px;margin:6px 0 12px;border-radius:9px;border:1px solid #303745;background:#0f131b;color:#fff"><option value="xmr">Monero (XMR) — RandomX</option><option value="tari">Tari (XTM) — RandomXT</option><option value="zeph">Zephyr (ZEPH) — RandomX</option><option value="ltcdoge">Litecoin + Dogecoin — Scrypt merged mining</option></select><label>Pool URL</label><input id="pool" placeholder="pool.example.com:3333"><label id="walletLabel">Monero wallet address</label><input id="wallet" placeholder="4... or 8..."><div id="poolPasswordRow" class="hidden"><label>Pool password</label><input id="poolPassword" type="password" placeholder="Pool password (often 1)"></div><label id="workerLabel">Worker name</label><input id="worker" value="umbrel"><label>CPU threads <span class="muted">(0 = automatic)</span></label><input id="threads" type="number" min="0" value="0"><label>Donation level %</label><input id="donate" type="number" min="0" value="1"><button onclick="save()">Save & Start Mining</button><p id="message"></p></section>
 
 <section id="dashboard" class="hidden">
 <div class="tabs"><button id="tab-overview" class="tab active" onclick="showTab('overview')">Overview</button><button id="tab-best" class="tab" onclick="showTab('best')">Best Diff</button><button id="tab-block" class="tab" onclick="showTab('block')">Block Found</button></div>
@@ -27,7 +27,7 @@ main{max-width:1050px;margin:auto;padding:28px}
 <div class="card wide"><button class="secondary" onclick="stop()">Stop Miner</button> <button onclick="showSetup()">Change Configuration</button></div>
 <div class="card wide">
 <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px">
-<div><div class="label">Miner Logs</div><div class="muted" style="font-size:12px;margin-top:3px">Live XMRig output</div></div>
+<div><div class="label">Miner Logs</div><div id="minerLogSubtitle" class="muted" style="font-size:12px;margin-top:3px">Live miner output</div></div>
 <button class="secondary" onclick="refreshLogs(true)">Refresh</button>
 </div>
 <pre id="minerLogs" class="logs"><span class="logs-empty">Waiting for miner output…</span></pre>
@@ -70,20 +70,41 @@ function fmtDiff(n){if(!Number.isFinite(n))return"—";const u=["","k","M","G","
 function fmtTime(s){if(!Number.isFinite(s))return"—";s=Math.floor(s);let d=Math.floor(s/86400);s%=86400;let h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);return(d?d+"d ":"")+(h?h+"h ":"")+(m?m+"m ":"")+s+"s"}
 function showTab(tab){currentTab=tab;["overview","best","block"].forEach(t=>{$("panel-"+t).classList.toggle("hidden",t!==tab);$("tab-"+(t==="best"?"best":t==="block"?"block":"overview")).classList.toggle("active",t===tab)})}
 async function api(url,opt){const r=await fetch(url,opt);if(!r.ok)throw Error("HTTP "+r.status);return await r.json()}
+function updateEngineLabels(){
+  const scrypt=$("engine").value==="cpuminer-opt";
+  if(scrypt){
+    $("coin").value="ltcdoge";
+    $("coin").disabled=true;
+  }else{
+    $("coin").disabled=false;
+    if($("coin").value==="ltcdoge") $("coin").value="xmr";
+  }
+  updateCoinLabels();
+}
 function updateCoinLabels(){
+  const scrypt=$("engine").value==="cpuminer-opt";
   const coin=$("coin").value;
   const tari=coin==="tari",zeph=coin==="zeph";
+  $("poolPasswordRow").classList.toggle("hidden",!scrypt);
+  $("workerLabel").textContent=scrypt?"Worker name / suffix":"Worker name";
+  if(scrypt){
+    $("walletLabel").textContent="Pool account username or wallet";
+    $("wallet").placeholder="Account username (worker suffix added automatically)";
+    $("coinSubtitle").textContent="Litecoin + Dogecoin merged mining • Scrypt • CPUMiner-opt";
+    $("pool").placeholder="stratum+tcp://eu.litecoinpool.org:3333";
+    return;
+  }
   $("walletLabel").textContent=tari?"Tari wallet address":zeph?"Zephyr wallet address":"Monero wallet address";
   $("wallet").placeholder=tari?"Tari XTM address":zeph?"ZEPH wallet address":"4... or 8...";
   $("coinSubtitle").textContent=tari?"Tari CPU mining • RandomXT • XMRig":zeph?"Zephyr CPU mining • RandomX • XMRig":"Monero CPU mining • RandomX • XMRig";
   $("pool").placeholder=tari?"pool.example.com:PORT":"pool.example.com:3333";
 }
 async function boot(){try{const x=await api("/api/config");if(!x.configured){showSetup();return}$("dashboard").classList.remove("hidden");refresh()}catch(e){$("status").textContent="Dashboard error"}}
-function showSetup(){$("setup").classList.remove("hidden");$("dashboard").classList.add("hidden");api("/api/config").then(x=>{const c=x.config||{};$("coin").value=c.coin||"xmr";$("pool").value=c.pool||"";$("wallet").value="";$("worker").value=c.worker||"umbrel";$("threads").value=c.threads??0;$("donate").value=c.donate_level??1;updateCoinLabels()})}
-async function save(){const msg=$("message");msg.textContent="Saving…";try{const x=await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({coin:$("coin").value,pool:$("pool").value,wallet:$("wallet").value,worker:$("worker").value,threads:$("threads").value,donate_level:$("donate").value})});if(!x.ok)throw Error(x.message);msg.className="ok";msg.textContent=x.message;$("setup").classList.add("hidden");$("dashboard").classList.remove("hidden");refresh()}catch(e){msg.className="error";msg.textContent=e.message}}
+function showSetup(){$("setup").classList.remove("hidden");$("dashboard").classList.add("hidden");api("/api/config").then(x=>{const c=x.config||{};$("engine").value=c.engine||"xmrig";$("coin").value=c.coin||"xmr";$("pool").value=c.pool||"";$("wallet").value="";$("poolPassword").value="";$("worker").value=c.worker||"umbrel";$("threads").value=c.threads??0;$("donate").value=c.donate_level??1;updateEngineLabels()})}
+async function save(){const msg=$("message");msg.textContent="Saving…";try{const x=await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({engine:$("engine").value,coin:$("coin").value,pool:$("pool").value,wallet:$("wallet").value,pool_password:$("poolPassword").value,worker:$("worker").value,threads:$("threads").value,donate_level:$("donate").value})});if(!x.ok)throw Error(x.message);msg.className="ok";msg.textContent=x.message;$("setup").classList.add("hidden");$("dashboard").classList.remove("hidden");refresh()}catch(e){msg.className="error";msg.textContent=e.message}}
 async function stop(){await api("/api/stop",{method:"POST"});$("status").textContent="Stopped";$("status").style.background="#4a1d24"}
 function renderStats(x){
-const tari=x.coin==="tari",zeph=x.coin==="zeph";$("coinSubtitle").textContent=tari?"Tari CPU mining • RandomXT • XMRig":zeph?"Zephyr CPU mining • RandomX • XMRig":"Monero CPU mining • RandomX • XMRig";$("status").textContent=x.running?"Mining":"Miner offline";$("status").style.background=x.running?"#183b28":"#4a1d24";
+const scrypt=x.engine==="cpuminer-opt",tari=x.coin==="tari",zeph=x.coin==="zeph";$("coinSubtitle").textContent=scrypt?"Litecoin + Dogecoin merged mining • Scrypt • CPUMiner-opt":tari?"Tari CPU mining • RandomXT • XMRig":zeph?"Zephyr CPU mining • RandomX • XMRig":"Monero CPU mining • RandomX • XMRig";$("minerLogSubtitle").textContent=scrypt?"Live CPUMiner-opt output":"Live XMRig output";$("tab-best").classList.toggle("hidden",scrypt);$("tab-block").classList.toggle("hidden",scrypt);if(scrypt&&currentTab!=="overview")showTab("overview");$("status").textContent=x.running?"Mining":"Miner offline";$("status").style.background=x.running?"#183b28":"#4a1d24";
 $("hash").textContent=fmtHash(x.hashrate);$("accepted").textContent=x.accepted??"—";$("rejected").textContent=x.rejected??"—";$("uptime").textContent=fmtTime(x.uptime);$("workerName").textContent=x.worker||"configured worker";$("poolName").textContent=x.pool||"Connected to configured pool";
 $("bestDiff").textContent=fmtDiff(x.best_diff);$("bestDiffRaw").textContent=Number.isFinite(x.best_diff)?x.best_diff.toLocaleString()+" raw difficulty":"—";$("poolDiff").textContent=fmtDiff(x.pool_diff);$("networkDiff").textContent=fmtDiff(x.network_difficulty);$("networkAlgo").textContent=tari?"RandomX (RandomXT)":(x.network_algorithm==="rx/0"?"RandomX":(x.network_algorithm||"RandomX"));$("networkAlgoSub").textContent=tari?"Tari • rx/0":"Monero • rx/0";$("networkUpdated").textContent=x.network_live?("Live • "+(tari?"Kryptex XTM-RX":zeph?"Kryptex ZEPH":"XMRig API")+" • updated "+new Date((x.network_updated_at||0)*1000).toLocaleTimeString()):((tari||zeph)?"Kryptex network data unavailable":"Network data unavailable");$("bestRatio").textContent=Number.isFinite(x.best_diff)&&Number.isFinite(x.network_difficulty)&&x.network_difficulty>0?(x.best_diff/x.network_difficulty*100).toFixed(4)+"%":"—";
 $("blockBestDiff").textContent=fmtDiff(x.best_diff);$("blockNetworkDiff").textContent=fmtDiff(x.network_difficulty);$("blockHeight").textContent=Number.isFinite(x.network_height)?x.network_height.toLocaleString():"—";$("blockAlgo").textContent=tari?"RandomX (RandomXT)":(x.network_algorithm==="rx/0"?"RandomX":(x.network_algorithm||"RandomX"));
