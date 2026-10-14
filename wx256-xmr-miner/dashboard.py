@@ -104,15 +104,48 @@ def miner_running():
     return miner_process is not None and miner_process.poll() is None
 
 
+def update_scrypt_stats(line):
+    """Parse CPUMiner-opt share and periodic summaries for dashboard metrics."""
+    line = str(line).strip()
+    with scrypt_stats_lock:
+        # Share result format: "5 Accepted 5 S0 R0 B0, 400.092 sec (159ms)".
+        share = re.search(
+            r"^\d+\s+(?:Accepted|Rejected|Stale)\s+(\d+)\s+S(\d+)\s+R(\d+)\s+B\d+",
+            line,
+            re.IGNORECASE,
+        )
+        if share:
+            scrypt_stats["accepted"] = int(share.group(1))
+            scrypt_stats["rejected"] = int(share.group(3))
+
+        # Periodic session summary lines: "Accepted 37 144 25.1%".
+        accepted = re.search(r"^Accepted\s+\d+\s+(\d+)\s+[0-9.]+%", line, re.IGNORECASE)
+        if accepted:
+            scrypt_stats["accepted"] = int(accepted.group(1))
+        rejected = re.search(r"^Rejected\s+\d+\s+(\d+)\s+[0-9.]+%", line, re.IGNORECASE)
+        if rejected:
+            scrypt_stats["rejected"] = int(rejected.group(1))
+
+        rate = re.search(
+            r"Hash\s+rate\s+([0-9]+(?:\.[0-9]+)?)\s*([kMGT]?)h/s",
+            line,
+            re.IGNORECASE,
+        )
+        if rate:
+            scale = {"": 1, "K": 1_000, "M": 1_000_000, "G": 1_000_000_000, "T": 1_000_000_000_000}
+            scrypt_stats["hashrate"] = float(rate.group(1)) * scale.get(rate.group(2).upper(), 1)
+
+
 def append_miner_log(line):
     line = str(line).rstrip("\r\n")
-    # XMRig normally emits ANSI color/control sequences. They are useful in
-    # a terminal but become visible garbage in the web dashboard.
-    line = re.sub(r"\x1b(?:[@-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\\\))", "", line)
+    # Remove ANSI color/control sequences before displaying miner output.
+    line = re.sub(r"\x1b(?:[@-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))", "", line)
     line = line.replace("\x1b", "")
     line = "".join(ch for ch in line if ch == "\t" or ord(ch) >= 32)
     if not line:
         return
+    if miner_engine == "cpuminer-opt":
+        update_scrypt_stats(line)
     timestamp = time.strftime("%H:%M:%S")
     with miner_log_lock:
         miner_logs.append(f"[{timestamp}] {line}")
@@ -155,36 +188,75 @@ def stop_miner():
 
 
 def start_miner():
-    global miner_process
+    global miner_process, miner_engine
     cfg = load_config()
     if not cfg.get("pool") or not cfg.get("wallet"):
-        return False, "Pool URL and wallet address are required"
+        return False, "Pool URL and wallet/username are required"
 
+    engine = get_engine_config(cfg)
     coin = get_coin_config(cfg)
-    coin_cfg = COINS[coin]
     stop_miner()
-
-    args = [
-        MINER,
-        "--url=" + cfg["pool"],
-        "--algo=" + coin_cfg["algorithm"],
-        "--user=" + cfg["wallet"],
-        "--pass=" + cfg.get("worker", "umbrel"),
-        "--donate-level=" + str(cfg.get("donate_level", 1)),
-        "--http-host=127.0.0.1",
-        "--http-port=8080",
-        "--print-time=60",
-        "--no-color",
-    ]
-
-    if coin_cfg["coin_arg"]:
-        args.insert(3, "--coin=" + coin_cfg["coin_arg"])
-
     threads = int(cfg.get("threads", 0))
-    if threads > 0:
-        args.append("--threads=" + str(threads))
 
-    append_miner_log("Starting XMRig: " + " ".join(args))
+    if engine == "cpuminer-opt":
+        if coin != "ltcdoge":
+            return False, "CPUMiner-opt currently supports the Litecoin + Dogecoin Scrypt option only"
+
+        pool_url = str(cfg["pool"]).strip()
+        if not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", pool_url):
+            pool_url = "stratum+tcp://" + pool_url
+
+        username = str(cfg["wallet"]).strip()
+        worker = str(cfg.get("worker", "umbrel")).strip()
+        # Most Scrypt pools accept account.worker or wallet.worker. If the
+        # user already supplied a suffix, do not append another one.
+        if worker and "." not in username:
+            username += "." + worker
+        password = str(cfg.get("pool_password", "1") or "1")
+
+        args = [
+            CPUMINER,
+            "--algo=scrypt",
+            "--url=" + pool_url,
+            "--user=" + username,
+            "--pass=" + password,
+            "--no-color",
+        ]
+        if threads > 0:
+            args.append("--threads=" + str(threads))
+
+        miner_engine = "cpuminer-opt"
+        with scrypt_stats_lock:
+            scrypt_stats.update({
+                "hashrate": None,
+                "accepted": 0,
+                "rejected": 0,
+                "started_at": time.time(),
+            })
+        append_miner_log("Starting CPUMiner-opt (Scrypt) with pool " + pool_url +
+                         " and " + (str(threads) if threads > 0 else "automatic") + " CPU threads.")
+    else:
+        coin_cfg = COINS[coin]
+        args = [
+            MINER,
+            "--url=" + cfg["pool"],
+            "--algo=" + coin_cfg["algorithm"],
+            "--user=" + cfg["wallet"],
+            "--pass=" + cfg.get("worker", "umbrel"),
+            "--donate-level=" + str(cfg.get("donate_level", 1)),
+            "--http-host=127.0.0.1",
+            "--http-port=8080",
+            "--print-time=60",
+            "--no-color",
+        ]
+        if coin_cfg["coin_arg"]:
+            args.insert(3, "--coin=" + coin_cfg["coin_arg"])
+        if threads > 0:
+            args.append("--threads=" + str(threads))
+
+        miner_engine = "xmrig"
+        append_miner_log("Starting XMRig: " + " ".join(args))
+
     try:
         with miner_lock:
             miner_process = subprocess.Popen(
@@ -202,9 +274,9 @@ def start_miner():
             daemon=True,
         ).start()
     except Exception as exc:
-        append_miner_log("Failed to start XMRig: " + str(exc))
+        append_miner_log("Failed to start " + ("CPUMiner-opt" if engine == "cpuminer-opt" else "XMRig") + ": " + str(exc))
         miner_process = None
-        return False, "Failed to start XMRig: " + str(exc)
+        return False, "Failed to start miner: " + str(exc)
 
     return True, "Mining started"
 
