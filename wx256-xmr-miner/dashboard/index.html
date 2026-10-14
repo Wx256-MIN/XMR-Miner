@@ -80,7 +80,7 @@ function updateCoinLabels(){
   $("pool").placeholder=tari?"pool.example.com:PORT":"pool.example.com:3333";
 }
 async function boot(){try{const x=await api("/api/config");if(!x.configured){showSetup();return}$("dashboard").classList.remove("hidden");refresh()}catch(e){$("status").textContent="Dashboard error"}}
-function showSetup(){$("setup").classList.remove("hidden");$("dashboard").classList.add("hidden");api("/api/config").then(x=>{const c=x.config||{};$("coin").value=c.coin||"xmr";$("pool").value=c.pool||"";$("wallet").value="";$("worker").value=c.worker||"umbrel";$("threads").value=c.threads??0;$("donate").value=c.donate_level??1;updateEngineLabels()})}
+function showSetup(){$("setup").classList.remove("hidden");$("dashboard").classList.add("hidden");api("/api/config").then(x=>{const c=x.config||{};$("coin").value=c.coin||"xmr";$("pool").value=c.pool||"";$("wallet").value="";$("worker").value=c.worker||"umbrel";$("threads").value=c.threads??0;$("donate").value=c.donate_level??1;updateCoinLabels()})}
 async function save(){const msg=$("message");msg.textContent="Saving…";try{const x=await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({coin:$("coin").value,pool:$("pool").value,wallet:$("wallet").value,worker:$("worker").value,threads:$("threads").value,donate_level:$("donate").value})});if(!x.ok)throw Error(x.message);msg.className="ok";msg.textContent=x.message;$("setup").classList.add("hidden");$("dashboard").classList.remove("hidden");refresh()}catch(e){msg.className="error";msg.textContent=e.message}}
 async function stop(){await api("/api/stop",{method:"POST"});$("status").textContent="Stopped";$("status").style.background="#4a1d24"}
 function renderStats(x){
