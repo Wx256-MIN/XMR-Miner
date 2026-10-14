@@ -196,6 +196,8 @@ def start_miner():
     engine = get_engine_config(cfg)
     coin = get_coin_config(cfg)
     stop_miner()
+    with miner_log_lock:
+        miner_logs.clear()
     threads = int(cfg.get("threads", 0))
 
     if engine == "cpuminer-opt":
