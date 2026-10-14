@@ -106,7 +106,7 @@ def miner_running():
 
 def update_scrypt_stats(line):
     """Parse CPUMiner-opt share and periodic summaries for dashboard metrics."""
-    line = str(line).strip()
+    line = re.sub(r"^\[[^\]]+\]\s*", "", str(line).strip())
     with scrypt_stats_lock:
         # Share result format: "5 Accepted 5 S0 R0 B0, 400.092 sec (159ms)".
         share = re.search(
