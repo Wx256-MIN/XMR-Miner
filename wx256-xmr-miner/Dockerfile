@@ -111,7 +111,8 @@ COPY entrypoint.sh /entrypoint.sh
 COPY dashboard.py /dashboard.py
 COPY dashboard /dashboard
 
-RUN chmod 0755 /entrypoint.sh /dashboard.py \
+RUN chmod 0755 /entrypoint.sh /dashboard.py /opt/xmrig /opt/cpuminer \
+    && python3 -m py_compile /dashboard.py \
     && mkdir -p /data \
     && chown -R 10001:10001 /data
 
