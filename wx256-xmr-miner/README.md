@@ -1,4 +1,4 @@
-# CPU RandomX Miner for UmbrelOS
+# RandomX CPU Miner for UmbrelOS
 
 A CPU RandomX miner for UmbrelOS powered by XMRig, with support for Monero (XMR) and Tari (XTM).
 
