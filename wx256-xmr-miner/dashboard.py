@@ -16,6 +16,7 @@ NETWORK_REFRESH_SECONDS = 10
 ROOT = "/dashboard"
 CONFIG = "/data/config.json"
 MINER = "/opt/xmrig"
+CPUMINER = "/opt/cpuminer"
 
 COINS = {
     "xmr": {
@@ -45,15 +46,27 @@ COINS = {
         "wallet_label": "Zephyr wallet address",
         "wallet_placeholder": "ZEPH wallet address",
     },
+    "ltcdoge": {
+        "name": "Litecoin + Dogecoin",
+        "symbol": "LTC + DOGE",
+        "algorithm": "scrypt",
+        "algorithm_name": "Scrypt (merged mining)",
+        "coin_arg": None,
+        "wallet_label": "Pool username / wallet",
+        "wallet_placeholder": "Pool username or wallet address",
+    },
 }
 
 DEFAULT_COIN = "xmr"
 
 miner_lock = threading.Lock()
 miner_process = None
+miner_engine = "xmrig"
 miner_log_lock = threading.Lock()
 miner_logs = []
 MAX_MINER_LOG_LINES = 400
+scrypt_stats_lock = threading.Lock()
+scrypt_stats = {"hashrate": None, "accepted": 0, "rejected": 0, "started_at": None}
 network_cache = {"ts": 0.0, "data": {}}
 network_lock = threading.Lock()
 
@@ -79,6 +92,12 @@ def get_coin_config(cfg=None):
     cfg = cfg or load_config()
     coin = str(cfg.get("coin", DEFAULT_COIN)).lower()
     return coin if coin in COINS else DEFAULT_COIN
+
+
+def get_engine_config(cfg=None):
+    cfg = cfg or load_config()
+    engine = str(cfg.get("engine", "xmrig")).strip().lower()
+    return engine if engine in ("xmrig", "cpuminer-opt") else "xmrig"
 
 
 def miner_running():
