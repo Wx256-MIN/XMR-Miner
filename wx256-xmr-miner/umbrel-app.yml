@@ -1,7 +1,7 @@
 manifestVersion: 1
 id: wx256-xmr-miner
-name: CPU RandomX Miner
-tagline: Monero XMR, Tari XTM and Zephyr ZEPH CPU mining with XMRig
+name: CPU Coin Miner
+tagline: RandomX and Scrypt CPU mining for XMR, XTM, ZEPH, LTC and DOGE
 icon: https://raw.githubusercontent.com/Wx256-MIN/XMR-Miner/main/wx256-xmr-miner/dashboard/favicon.svg
 category: finance
 version: "0.4.16"
