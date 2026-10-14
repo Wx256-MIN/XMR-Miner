@@ -7,7 +7,9 @@ ARG XMRIG_VERSION
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git build-essential cmake python3 \
+       autoconf automake libtool pkg-config \
        libuv1-dev libssl-dev libhwloc-dev libmicrohttpd-dev \
+       libcurl4-openssl-dev libjansson-dev libgmp-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -86,14 +88,25 @@ RUN cmake -S xmrig -B xmrig/build -DCMAKE_BUILD_TYPE=Release -DWITH_HWLOC=ON -DW
     && cmake --build xmrig/build --config Release --parallel "$(nproc)" \
     && test -x xmrig/build/xmrig
 
+# CPUMiner-opt provides the additional Scrypt engine used for Litecoin and
+# Dogecoin merged-mining pools. Keep its source/version pinned for repeatable builds.
+ARG CPUMINER_OPT_VERSION=26.1
+RUN git clone --depth 1 --branch "v${CPUMINER_OPT_VERSION}" https://github.com/JayDDee/cpuminer-opt.git cpuminer-opt \
+    && cd cpuminer-opt \
+    && ./autogen.sh \
+    && CFLAGS="-O3 -Wall" ./configure --with-curl \
+    && make -j"$(nproc)" \
+    && test -x cpuminer
+
 FROM ubuntu:24.04
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl python3 libuv1t64 libhwloc15 libmicrohttpd12 libssl3t64 libstdc++6 \
+    && apt-get install -y --no-install-recommends ca-certificates curl python3 libuv1t64 libhwloc15 libmicrohttpd12 libssl3t64 libstdc++6 libcurl4t64 libjansson4 libgmp10 zlib1g \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --create-home --home-dir /data xmrig
 
 COPY --from=builder /src/xmrig/build/xmrig /opt/xmrig
+COPY --from=builder /src/cpuminer-opt/cpuminer /opt/cpuminer
 COPY entrypoint.sh /entrypoint.sh
 COPY dashboard.py /dashboard.py
 COPY dashboard /dashboard
